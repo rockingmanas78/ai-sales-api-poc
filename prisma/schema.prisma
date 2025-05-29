@@ -1,0 +1,155 @@
+// Prisma schema for the multi‑tenant lead‑generation & CRM platform
+// -------------------------------------------------------------------
+// 1. Configure datasource & client generator
+// -------------------------------------------------------------------
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------------------------------------------------------
+// 2. Enums
+// -------------------------------------------------------------------
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  MANAGER
+}
+
+enum LeadStatus {
+  NOT_INTERESTED
+  FOLLOW_UP
+  INTERESTED
+  IMMEDIATE_ACTION
+}
+
+enum EmailStatus {
+  QUEUED
+  SENT
+  OPENED
+  CLICKED
+  BOUNCED
+  FAILED
+}
+
+// -------------------------------------------------------------------
+// 3. Core multi‑tenant models
+// -------------------------------------------------------------------
+model Tenant {
+  id          String           @id @default(uuid())
+  name        String
+  plan        Plan             @default(FREE)
+  createdAt   DateTime         @default(now())
+  // Relations
+  users       User[]
+  leads       Lead[]
+  templates   EmailTemplate[]
+  campaigns   EmailCampaign[]
+  jobs        LeadGenerationJob[]
+}
+
+model User {
+  id            String     @id @default(uuid())
+  tenantId      String
+  email         String     @unique
+  passwordHash  String
+  role          UserRole   @default(MANAGER)
+  verified      Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+  // Relations
+  tenant        Tenant     @relation(fields: [tenantId], references: [id])
+}
+
+model Lead {
+  id            String       @id @default(uuid())
+  tenantId      String
+  companyName   String
+  contactEmail  String
+  contactPhone  String?
+  status        LeadStatus   @default(FOLLOW_UP)
+  confidence    Float?
+  metadata      Json?
+  createdAt     DateTime     @default(now())
+  // Relations
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  emailLogs     EmailLog[]
+  @@index([tenantId, status])
+}
+
+model EmailTemplate {
+  id          String       @id @default(uuid())
+  tenantId    String
+  name        String
+  subject     String
+  body        String
+  createdAt   DateTime     @default(now())
+  // Relations
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  campaigns   EmailCampaign[]
+}
+
+model EmailCampaign {
+  id            String       @id @default(uuid())
+  tenantId      String
+  templateId    String
+  scheduledAt   DateTime?
+  createdAt     DateTime     @default(now())
+  // Relations
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  template      EmailTemplate @relation(fields: [templateId], references: [id])
+  logs          EmailLog[]
+}
+
+model EmailLog {
+  id            String       @id @default(uuid())
+  tenantId      String
+  campaignId    String
+  leadId        String
+  status        EmailStatus  @default(QUEUED)
+  sentAt        DateTime?
+  openedAt      DateTime?
+  clickedAt     DateTime?
+  // Relations
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  campaign      EmailCampaign @relation(fields: [campaignId], references: [id])
+  lead          Lead         @relation(fields: [leadId], references: [id])
+  @@index([tenantId, status])
+}
+
+// -------------------------------------------------------------------
+// 4. Lead‑generation job tracking (scraper / AI micro‑service hand‑off)
+// -------------------------------------------------------------------
+model LeadGenerationJob {
+  id            String     @id @default(uuid())
+  tenantId      String
+  prompt        String
+  industry      String?
+  location      String?
+  status        String     @default("QUEUED")  // QUEUED | PROCESSING | DONE | FAILED
+  batchId       String?
+  createdAt     DateTime   @default(now())
+  completedAt   DateTime?
+  // Relations
+  tenant        Tenant     @relation(fields: [tenantId], references: [id])
+  @@index([tenantId, status])
+}
+
+// -------------------------------------------------------------------
+// 5. Row‑Level Security (PostgreSQL)
+// -------------------------------------------------------------------
+// RLS policies are defined in migrations, not in Prisma. Ensure every model
+// includes `tenantId` and your migrations add:
+//   ALTER TABLE "Lead" ENABLE ROW LEVEL SECURITY;
+//   CREATE POLICY "tenant_isolation" ON "Lead"
+//   USING (tenantId = current_setting('app.tenant_id'));
+// …repeat for other tables.
