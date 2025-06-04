@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { OAuth2Client } from "google-auth-library";
 import { PrismaClient } from "@prisma/client";
 import { generateTokens } from "../utils/generateTokens.js";
-import crypto from "crypto";
+import crypto from "crypto"; 
 import nodemailer from "nodemailer";
 
 const prisma = new PrismaClient();
