@@ -56,6 +56,20 @@ model Tenant {
   templates   EmailTemplate[]
   campaigns   EmailCampaign[]
   jobs        LeadGenerationJob[]
+   emailLogs   EmailLog[]   
+  deletedAt   DateTime?
+}
+model CampaignLead {
+  id          String         @id @default(uuid())
+  campaignId  String
+  leadId      String
+  createdAt   DateTime       @default(now())
+
+  // Relations
+  campaign    EmailCampaign  @relation(fields: [campaignId], references: [id])
+  lead        Lead           @relation(fields: [leadId], references: [id])
+
+  @@unique([campaignId, leadId])
 }
 
 model User {
@@ -68,23 +82,40 @@ model User {
   createdAt     DateTime   @default(now())
   // Relations
   tenant        Tenant     @relation(fields: [tenantId], references: [id])
+  deletedAt    DateTime?
 }
 
 model Lead {
-  id            String       @id @default(uuid())
+  id            String         @id @default(uuid())
   tenantId      String
   companyName   String
   contactEmail  String
+  contactName   String
   contactPhone  String?
-  status        LeadStatus   @default(FOLLOW_UP)
+  status        LeadStatus     @default(FOLLOW_UP)
   confidence    Float?
   metadata      Json?
-  createdAt     DateTime     @default(now())
+  createdAt     DateTime       @default(now())
+  deletedAt     DateTime?
+
   // Relations
-  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
   emailLogs     EmailLog[]
+  campaignLeads CampaignLead[] // ← add this
+
   @@index([tenantId, status])
 }
+
+model Variable {
+  id             String         @id @default(uuid())
+  key            String
+  defaultValue   String?
+  templateId     String
+
+  // Relations
+  template       EmailTemplate  @relation(fields: [templateId], references: [id])
+}
+
 
 model EmailTemplate {
   id          String       @id @default(uuid())
@@ -92,23 +123,30 @@ model EmailTemplate {
   name        String
   subject     String
   body        String
+  from        String       // Sender email address
+  to          String 
+  variable    Variable[]  // Recipient email address or default recipient placeholder
   createdAt   DateTime     @default(now())
   // Relations
   tenant      Tenant       @relation(fields: [tenantId], references: [id])
   campaigns   EmailCampaign[]
+  deletedAt   DateTime?
 }
 
 model EmailCampaign {
-  id            String       @id @default(uuid())
+  id            String         @id @default(uuid())
   tenantId      String
   templateId    String
   scheduledAt   DateTime?
-  createdAt     DateTime     @default(now())
+  createdAt     DateTime       @default(now())
+
   // Relations
-  tenant        Tenant       @relation(fields: [tenantId], references: [id])
-  template      EmailTemplate @relation(fields: [templateId], references: [id])
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  template      EmailTemplate  @relation(fields: [templateId], references: [id])
   logs          EmailLog[]
+  campaignLeads CampaignLead[] // ← add this
 }
+
 
 model EmailLog {
   id            String       @id @default(uuid())

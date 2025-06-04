@@ -1,23 +1,19 @@
+// routes/userRoutes.js
 import { Router } from 'express';
-import { createUser, getUsers } from '../controllers/userController.js';
+import {
+  createUser,
+  getUsers,
+  getUserById,
+  updateUser,
+  deleteUser,
+} from '../controllers/user.controller.js';
+
 const userRouter = Router();
 
 userRouter.post('/', createUser);
-userRouter.get('/', getUsers);
-
-// Create a new user along with user
-userRouter.post('/', createUser);
-
-// Get users
-userRouter.get('/', getUsers);
-
-// Get single user
-userRouter.get('/:userId', getUsers);
-
-// Update user
-userRouter.put('/:userId', getUsers);
-
-// Delete user
-userRouter.delete('/:userId', getUsers);
+userRouter.get('/', getUsers); // tenantId from query
+userRouter.get('/:userId', getUserById); // tenantId from body
+userRouter.put('/:userId', updateUser); // tenantId from body
+userRouter.delete('/:userId', deleteUser); // tenantId from body
 
 export default userRouter;

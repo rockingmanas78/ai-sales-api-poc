@@ -1,20 +1,25 @@
-import { Router } from 'express';
-import { createTenant, getTenants } from '../controllers/tenantController.js';
-const tenantRouter = Router();
+import express from 'express';
+import {
+  createTenant,
+  getTenantProfile,
+  updateTenantProfile,
+  getAvailablePlans,
+  softDeleteTenant,
+  getAllTenant
+} from '../controllers/tenant.controllers.js';
 
-// Create a new tenant along with user
-tenantRouter.post('/', createTenant);
+const router = express.Router();
 
-// Get Tenants
-tenantRouter.get('/', getTenants);
+router.post('/create',createTenant)
+router.get('/get',getAllTenant);
+//  /tenant – Get current tenant’s profile, active plan, and usage caps
+router.get('/profile/:tenantId', getTenantProfile);
 
-// Get single Tenant
-tenantRouter.get('/:tenantId', getTenants);
+//  /tenant – Update anything in tenant
+router.patch('/update/:tenantId', updateTenantProfile);
 
-// Update tenant
-tenantRouter.put('/:tenantId', getTenants);
+//  /plans – Public endpoint to list available plans
+router.get('/plans', getAvailablePlans);
+router.delete('/delete/:tenantId',softDeleteTenant)
 
-// Delete Tenant
-tenantRouter.delete('/:tenantId', getTenants);
-
-export default tenantRouter;
+export default router;
