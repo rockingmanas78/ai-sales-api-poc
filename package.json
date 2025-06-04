@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon index.js",
-    "start": "node index.js"
+    "start": "node index.js",
+    "vercel-build": "prisma generate"
   },
   "keywords": [],
   "author": "",
@@ -13,9 +14,11 @@
   "description": "",
   "dependencies": {
     "@prisma/client": "^6.8.2",
+    "bcryptjs": "^3.0.2",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "google-auth-library": "^9.15.1",
+    "jsonwebtoken": "^9.0.2",
     "nodemailer": "^7.0.3"
   },
   "devDependencies": {
