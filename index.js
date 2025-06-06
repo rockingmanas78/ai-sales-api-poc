@@ -1,5 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import cors from 'cors';
 
 import authRouter from './routes/auth.route.js';
 import tenantRouter from './routes/tenant.route.js';
@@ -13,8 +14,16 @@ import logRouter from './routes/emailLog.route.js';
 
 dotenv.config();
 
+const corsOptions = {
+  origin: ['http://localhost:3000', 'http://localhost:8080', ], 
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+};
+
 const app = express();
+
+// Middleware for parsing JSON requests
 app.use(express.json());
+app.use(cors(corsOptions));
 
 // Mount all routers
 app.use('/auth', authRouter);
