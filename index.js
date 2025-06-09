@@ -11,19 +11,33 @@ import templateRouter from './routes/emailTemplate.route.js';
 import campaignRouter from './routes/campaign.route.js';
 import logRouter from './routes/emailLog.route.js';
 //import reportRouter from './routes/report.route.js';
+const app = express();
 
 dotenv.config();
 
-const corsOptions = {
-  origin: ['http://localhost:3000', 'http://localhost:8080', ], 
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-};
-
-const app = express();
-
-// Middleware for parsing JSON requests
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:8080',
+];
 app.use(express.json());
-app.use(cors(corsOptions));
+
+app.use(cors({
+    origin: (origin, callback) => {
+      // origin will be undefined for non-browser requests (e.g., Postman). 
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  }));
+
+
+
+
 
 // Mount all routers
 app.use('/auth', authRouter);
