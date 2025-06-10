@@ -227,3 +227,87 @@ export const updateLeadStatus = async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+// BULK SOFT DELETE Leads
+export const bulkDeleteLeads = async (req, res) => {
+  try {
+    const { tenantId, leadIds } = req.body;
+
+    if (!tenantId || !Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({ error: 'tenantId and leadIds[] are required' });
+    }
+
+    // Validate ownership of all leads
+    const leads = await prisma.lead.findMany({
+      where: {
+        id: { in: leadIds },
+        deletedAt: null,
+      },
+      select: { id: true, tenantId: true },
+    });
+
+    const unauthorizedLeads = leads.filter(lead => lead.tenantId !== tenantId);
+    if (unauthorizedLeads.length > 0) {
+      return res.status(403).json({ error: 'One or more leads do not belong to the tenant' });
+    }
+
+    // Proceed with soft-deleting authorized leads
+    const result = await prisma.lead.updateMany({
+      where: {
+        id: { in: leadIds },
+        tenantId,
+        deletedAt: null,
+      },
+      data: {
+        deletedAt: new Date(),
+      },
+    });
+
+    res.json({ message: 'Leads soft-deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Error in bulk delete:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+  
+
+export const bulkUpdateLeadStatus = async (req, res) => {
+  try {
+    const { tenantId, leadIds, status } = req.body;
+
+    if (!tenantId || !Array.isArray(leadIds) || leadIds.length === 0 || !status) {
+      return res.status(400).json({ error: 'tenantId, leadIds[], and status are required' });
+    }
+
+    // Validate ownership
+    const leads = await prisma.lead.findMany({
+      where: {
+        id: { in: leadIds },
+        deletedAt: null,
+      },
+      select: { id: true, tenantId: true },
+    });
+
+    const unauthorizedLeads = leads.filter(lead => lead.tenantId !== tenantId);
+    if (unauthorizedLeads.length > 0) {
+      return res.status(403).json({ error: 'One or more leads do not belong to the tenant' });
+    }
+
+    // Proceed with update
+    const result = await prisma.lead.updateMany({
+      where: {
+        id: { in: leadIds },
+        tenantId,
+        deletedAt: null,
+      },
+      data: {
+        status,
+      },
+    });
+
+    res.json({ message: `Lead statuses updated to ${status}`, count: result.count });
+  } catch (error) {
+    console.error('Error in bulk status update:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+

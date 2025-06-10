@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createLead, getTenantLeads, getLeadById, updateLead, deleteLead, updateLeadStatus,getDashboardLeads } from '../controllers/lead.controller.js';
+import { createLead, getTenantLeads, getLeadById, updateLead, deleteLead, updateLeadStatus,getDashboardLeads,bulkDeleteLeads, bulkUpdateLeadStatus} from '../controllers/lead.controller.js';
 const leadRouter = Router();
 
 // Create a new lead (manual upload)
@@ -17,5 +17,7 @@ leadRouter.patch('/:leadId/status', updateLeadStatus);
 
 //dashboard leads
 leadRouter.get('/dashboard/leads', getDashboardLeads);
+leadRouter.post('/leads/bulk-delete', bulkDeleteLeads);
+leadRouter.patch('/leads/bulk-status', bulkUpdateLeadStatus);
 
 export default leadRouter;
