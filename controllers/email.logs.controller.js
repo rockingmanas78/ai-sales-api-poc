@@ -30,7 +30,7 @@ export const getEmailLogs = async (req, res) => {
 export const getEmailLogById = async (req, res) => {
   try {
     const { logId } = req.params;
-    const { tenantId } = req.body;
+    const  tenantId  = req.query.tenantId;
 
     if (!tenantId) {
       return res.status(400).json({ error: 'tenantId is required in request body' });

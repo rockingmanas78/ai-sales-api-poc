@@ -70,9 +70,8 @@ export const getTenantLeads = async (req, res) => {
 export const getLeadById = async (req, res) => {
   try {
     const { leadId } = req.params;
-    const { tenantId } = req.body;
-console.log(leadId);
-console.log(tenantId);
+    const  tenantId  = req.query.tenantId;
+
     const lead = await prisma.lead.findFirst({
       where: {
         id: leadId,
@@ -93,7 +92,7 @@ console.log(tenantId);
 };
 export const getDashboardLeads = async (req, res) => {
   try {
-    const { tenantId } = req.body;
+    const  tenantId  = req.query.tenantId;
     if (!tenantId) {
       return res.status(400).json({ error: 'tenantId is required in request body' });
     }

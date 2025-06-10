@@ -95,7 +95,7 @@ export const getCampaigns = async (req, res) => {
 export const getCampaignById = async (req, res) => {
   try {
     const { campaignId } = req.params;
-    const { tenantId } = req.body;
+    const  tenantId  = req.query.tenantId;
 
     if (!tenantId) {
       return res.status(400).json({ error: 'tenantId is required in body' });
@@ -160,7 +160,7 @@ export const updateCampaign = async (req, res) => {
 export const deleteCampaign = async (req, res) => {
   try {
     const { campaignId } = req.params;
-    const { tenantId } = req.body;
+    const  tenantId  = req.query.tenantId;
 
     if (!tenantId) {
       return res.status(400).json({ error: 'tenantId is required in body' });

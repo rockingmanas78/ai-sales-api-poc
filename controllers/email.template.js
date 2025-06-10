@@ -78,7 +78,7 @@ export const getTenantTemplates = async (req, res) => {
 export const getTemplateById = async (req, res) => {
   try {
     const { templateId } = req.params;
-    const { tenantId } = req.body;
+    const  tenantId  = req.query.tenantId;
 
     if (!tenantId) {
       return res.status(400).json({ error: "tenantId is required in body" });
@@ -160,7 +160,7 @@ export const updateTemplate = async (req, res) => {
 export const deleteTemplate = async (req, res) => {
   try {
     const { templateId } = req.params;
-    const { tenantId } = req.body;
+    const  tenantId  = req.query.tenantId;
 
     if (!tenantId) {
       return res.status(400).json({ error: "tenantId is required in body" });
