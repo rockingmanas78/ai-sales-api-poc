@@ -2,14 +2,19 @@ import axios from "axios";
 
 export const handleSnsEvent = async (req, res) => {
   try {
-    const rawBody = req.body?.toString?.(); // Check if toString exists
-    if (!rawBody) {
-      return res.status(400).send("No body received.");
+    let snsMessage;
+
+    if (Buffer.isBuffer(req.body)) {
+      // Coming from raw body (AWS SNS production)
+      snsMessage = JSON.parse(req.body.toString("utf-8"));
+    } else if (typeof req.body === "object") {
+      // Likely local test (like Postman or body-parser fallback)
+      snsMessage = req.body;
+    } else {
+      return res.status(400).send("Unsupported body format.");
     }
 
-    const snsMessage = JSON.parse(rawBody);
-
-    // 1. Handle SNS Subscription Confirmation
+    // 1. Subscription confirmation
     if (snsMessage.Type === "SubscriptionConfirmation") {
       console.log("🔔 SNS subscription confirmation received.");
       console.log("📎 Confirming via:", snsMessage.SubscribeURL);
@@ -17,35 +22,34 @@ export const handleSnsEvent = async (req, res) => {
       return res.status(200).send("Subscription confirmed.");
     }
 
-    // 2. Handle actual SES Notification
+    // 2. SES Event Notification
     if (snsMessage.Type === "Notification") {
-      const sesEvent = JSON.parse(snsMessage.Message); // SES sends JSON inside "Message"
+      const sesEvent = JSON.parse(snsMessage.Message); // Actual SES payload
       console.log("📩 SES Event:", sesEvent.eventType);
 
-      // Custom DB update logic here
       switch (sesEvent.eventType) {
         case "Send":
-          // Update status: sent
+          // update DB sent status
           break;
         case "Open":
-          // Update status: opened
+          // update DB open status
           break;
         case "Click":
-          // Update status: clicked
+          // update DB click status
           break;
         case "Bounce":
-          // Mark email as bounced
+          // update DB bounced
           break;
         default:
-          console.log("❓ Unhandled eventType:", sesEvent.eventType);
+          console.log("Unhandled eventType:", sesEvent.eventType);
       }
 
-      return res.status(200).send("Notification handled.");
+      return res.status(200).send("SES Notification handled.");
     }
 
-    return res.status(200).send("Unhandled message type.");
+    return res.status(200).send("Unhandled SNS message type.");
   } catch (err) {
     console.error("❌ Error handling SNS message:", err);
-    return res.status(500).send("Error processing SNS message.");
+    return res.status(500).send("Internal Server Error");
   }
 };
