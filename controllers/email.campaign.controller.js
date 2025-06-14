@@ -187,3 +187,67 @@ export const deleteCampaign = async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+
+// GET /api/campaign-dashboard
+export const getCampaignDashboard = async (req, res) => {
+  const tenantId = req.params;
+
+  try {
+    // Fetch all campaigns with required relations
+    const campaigns = await prisma.emailCampaign.findMany({
+      where: { tenantId },
+      include: {
+        campaignLeads: true,
+        logs: true,
+        template: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    let totalEmailsSent = 0;
+    let totalEmailsOpened = 0;
+    let totalEmailsReplied = 0;
+
+    const campaignCards = campaigns.map((campaign) => {
+      const sent = campaign.logs.filter(log => log.status === "SENT").length;
+      const opened = campaign.logs.filter(log => log.status === "OPENED").length;
+      const replied = campaign.logs.filter(log => log.status === "REPLIED").length;
+
+      totalEmailsSent += sent;
+      totalEmailsOpened += opened;
+      totalEmailsReplied += replied;
+
+      const openRate = sent ? Math.round((opened / sent) * 100) : 0;
+      const replyRate = sent ? Math.round((replied / sent) * 100) : 0;
+
+      return {
+        id: campaign.id,
+        name: campaign.template.name,
+        status: campaign.status, // ENUM: DRAFT, SCHEDULED, ACTIVE, COMPLETED
+        scheduledAt: campaign.scheduledAt,
+        totalLeads: campaign.campaignLeads.length,
+        emailsSent: sent,
+        openRate,
+        replyRate,
+      };
+    });
+
+    const totalCampaigns = campaigns.length;
+    const avgOpenRate = totalEmailsSent ? Math.round((totalEmailsOpened / totalEmailsSent) * 100) : 0;
+    const avgReplyRate = totalEmailsSent ? Math.round((totalEmailsReplied / totalEmailsSent) * 100) : 0;
+
+    return res.json({
+      summary: {
+        totalCampaigns,
+        totalEmailsSent,
+        avgOpenRate,
+        avgReplyRate,
+      },
+      campaigns: campaignCards,
+    });
+  } catch (error) {
+    console.error("Dashboard API error:", error);
+    return res.status(500).json({ error: "Failed to fetch campaign dashboard." });
+  }
+};

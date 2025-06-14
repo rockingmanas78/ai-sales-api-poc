@@ -10,6 +10,8 @@ import leadRouter from './routes/lead.route.js';
 import templateRouter from './routes/emailTemplate.route.js';
 import campaignRouter from './routes/campaign.route.js';
 import logRouter from './routes/emailLog.route.js';
+import emailRoutes  from "./routes/ses.route.js";
+import snsRoutes from "./routes/sns.route.js";
 //import reportRouter from './routes/report.route.js';
 const app = express();
 
@@ -48,8 +50,9 @@ app.use('/leads', leadRouter);
 app.use('/templates', templateRouter);
 app.use('/campaigns', campaignRouter);
 app.use('/email-logs', logRouter);
+app.use("/api/aws", emailRoutes);
 //app.use('/reports', reportRouter);
-
+app.use("/api", snsRoutes); 
 // Global error handler
 app.use((err, req, res, next) => {
   console.error(err);

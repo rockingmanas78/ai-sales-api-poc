@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createCampaign, getCampaigns, getCampaignById, updateCampaign, deleteCampaign } from '../controllers/email.campaign.controller.js';
+import { createCampaign, getCampaigns, getCampaignById, updateCampaign, deleteCampaign,getCampaignDashboard } from '../controllers/email.campaign.controller.js';
 const campaignRouter = Router();
 
 // Create a new campaign
@@ -12,5 +12,7 @@ campaignRouter.get('/get/:campaignId', getCampaignById);
 campaignRouter.put('/update/:campaignId', updateCampaign);
 // Delete campaign
 campaignRouter.delete('/delete/:campaignId', deleteCampaign);
+// Campaign Dashboard data
 
+campaignRouter.get('/campaign/dashboard/:tenantId',getCampaignDashboard);
 export default campaignRouter;

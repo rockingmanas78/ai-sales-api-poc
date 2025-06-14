@@ -38,8 +38,17 @@ enum EmailStatus {
   SENT
   OPENED
   CLICKED
+  REPLIED
   BOUNCED
   FAILED
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
 }
 
 // -------------------------------------------------------------------
@@ -139,14 +148,13 @@ model EmailCampaign {
   templateId    String
   scheduledAt   DateTime?
   createdAt     DateTime       @default(now())
-
+  status        CampaignStatus @default(DRAFT) // <--- add this
   // Relations
   tenant        Tenant         @relation(fields: [tenantId], references: [id])
   template      EmailTemplate  @relation(fields: [templateId], references: [id])
   logs          EmailLog[]
-  campaignLeads CampaignLead[] // ← add this
+  campaignLeads CampaignLead[]
 }
-
 
 model EmailLog {
   id            String       @id @default(uuid())
@@ -157,6 +165,7 @@ model EmailLog {
   sentAt        DateTime?
   openedAt      DateTime?
   clickedAt     DateTime?
+  repliedAt     DateTime?  
   // Relations
   tenant        Tenant       @relation(fields: [tenantId], references: [id])
   campaign      EmailCampaign @relation(fields: [campaignId], references: [id])
