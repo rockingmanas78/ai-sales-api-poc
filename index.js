@@ -12,6 +12,7 @@ import campaignRouter from './routes/campaign.route.js';
 import logRouter from './routes/emailLog.route.js';
 import emailRoutes  from "./routes/ses.route.js";
 import snsRoutes from "./routes/sns.route.js";
+import bodyParser from 'body-parser';
 //import reportRouter from './routes/report.route.js';
 const app = express();
 
@@ -52,7 +53,8 @@ app.use('/campaigns', campaignRouter);
 app.use('/email-logs', logRouter);
 app.use("/api/aws", emailRoutes);
 //app.use('/reports', reportRouter);
-app.use("/api", snsRoutes); 
+app.use('/api', bodyParser.raw({ type: '*/*' }), snsRoutes);
+ 
 // Global error handler
 app.use((err, req, res, next) => {
   console.error(err);
