@@ -1,13 +1,12 @@
 import express from "express";
 import { handleSnsEvent } from "../controllers/sns.controller.js";
-import bodyParser from "body-parser";
 
 const router = express.Router();
 
-// Use raw parser for SNS to avoid parsing issues
+// SNS sends signed messages → must use raw body to preserve signature
 router.post(
   "/aws/sns-events",
-  bodyParser.raw({ type: "application/json" }),
+  express.raw({ type: "application/json" }),
   handleSnsEvent
 );
 
