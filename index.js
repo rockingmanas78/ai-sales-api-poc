@@ -5,7 +5,6 @@ import cors from 'cors';
 import authRouter from './routes/auth.route.js';
 import tenantRouter from './routes/tenant.route.js';
 import userRouter from './routes/user.route.js';
-//import jobRouter from './routes/leadGenJob.route.js';
 import leadRouter from './routes/lead.route.js';
 import templateRouter from './routes/emailTemplate.route.js';
 import campaignRouter from './routes/campaign.route.js';
@@ -13,6 +12,7 @@ import logRouter from './routes/emailLog.route.js';
 import emailRoutes  from "./routes/ses.route.js";
 import snsRoutes from "./routes/sns.route.js";
 import bodyParser from 'body-parser';
+import leadGenRouter from './routes/leadGenJob.route.js';
 //import reportRouter from './routes/report.route.js';
 const app = express();
 
@@ -46,7 +46,7 @@ app.use(cors({
 app.use('/auth', authRouter);
 app.use('/tenants', tenantRouter);
 app.use('/users', userRouter);
-// app.use('/lead-jobs', jobRouter);
+app.use('/lead-jobs', leadGenRouter);
 app.use('/leads', leadRouter);
 app.use('/templates', templateRouter);
 app.use('/campaigns', campaignRouter);

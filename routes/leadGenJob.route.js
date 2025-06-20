@@ -1,3 +1,12 @@
+import { Router } from 'express';
+import { searchAndExtract } from '../controllers/leadGenJob.controller.js';
+const router = Router();
+
+// POST /api/search_and_extract
+router.post('/search_and_extract', searchAndExtract);
+
+export default router;
+
 // import { Router } from 'express';
 // import { enqueueJob, getJobs, getJobById, updateJob, deleteJob } from '../controllers/leadGenJobController.js';
 // const jobRouter = Router();
