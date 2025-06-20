@@ -51,11 +51,6 @@ enum CampaignStatus {
   CANCELLED
 }
 
-enum ZoneCode      { IN US EU AE ROW }
-enum MeterMetric   { JOB CLASSIFICATION SEAT }
-enum CapPeriod     { DAY MONTH PERIOD }
-enum BillingCadence { MONTHLY YEARLY }
-enum Experiment     { PUBLIC A B C }
 
 // -------------------------------------------------------------------
 // 3. Core multi‑tenant models
