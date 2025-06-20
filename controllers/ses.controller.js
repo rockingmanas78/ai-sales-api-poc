@@ -1,7 +1,19 @@
-// controllers/sesDomainController.js
-import { SESClient, VerifyDomainIdentityCommand,VerifyEmailIdentityCommand,GetIdentityVerificationAttributesCommand, } from "@aws-sdk/client-ses";
+import {
+  SESClient,
+  VerifyDomainIdentityCommand,
+  VerifyEmailIdentityCommand,
+  GetIdentityVerificationAttributesCommand,
+  SendEmailCommand,
+} from "@aws-sdk/client-ses";
 
-const ses = new SESClient({ region: "ap-south-1" }); // change to your SES region
+
+const ses = new SESClient({
+  region: "ap-south-1",
+  credentials: {
+    accessKeyId: process.env.AWS_SES_ACCESS_KEY,
+    secretAccessKey: process.env.AWS_SES_SECRET_KEY,
+  },
+}); // Update to your SES region
 
 export const onboardDomain = async (req, res) => {
   const { domainName } = req.body;
@@ -14,7 +26,6 @@ export const onboardDomain = async (req, res) => {
     const command = new VerifyDomainIdentityCommand({ Domain: domainName });
     const response = await ses.send(command);
 
-    // This is the verification token you need to add as a TXT DNS record
     const token = response.VerificationToken;
 
     res.status(200).json({
@@ -32,7 +43,6 @@ export const onboardDomain = async (req, res) => {
     res.status(500).json({ error: "Failed to initiate domain verification" });
   }
 };
-
 
 export const onboardEmail = async (req, res) => {
   const { emailAddress } = req.body;
@@ -78,10 +88,9 @@ export const checkVerificationStatus = async (req, res) => {
 
     const response = {
       identity,
-      verificationStatus: status, // 'Pending', 'Success', 'Failed'
+      verificationStatus: status,
     };
 
-    // For domains, include the token too
     if (VerificationAttributes[identity]?.VerificationToken) {
       response.verificationToken = VerificationAttributes[identity].VerificationToken;
     }
@@ -90,5 +99,46 @@ export const checkVerificationStatus = async (req, res) => {
   } catch (error) {
     console.error("Error checking verification status:", error);
     res.status(500).json({ error: "Failed to fetch verification status" });
+  }
+};
+
+export const sendTrackedEmail = async (req, res) => {
+  const { toEmail, subject, htmlBody, configurationSetName } = req.body;
+
+  if (!toEmail || !subject || !htmlBody || !configurationSetName) {
+    return res.status(400).json({
+      error: "toEmail, subject, htmlBody, and configurationSetName are required",
+    });
+  }
+
+  try {
+    const command = new SendEmailCommand({
+      Destination: {
+        ToAddresses: [toEmail],
+      },
+      Message: {
+        Subject: {
+          Charset: "UTF-8",
+          Data: subject,
+        },
+        Body: {
+          Html: {
+            Charset: "UTF-8",
+            Data: htmlBody,
+          },
+        },
+      },
+      Source: "sales@productimate.io", // Replace with your verified sender
+      ConfigurationSetName: configurationSetName,
+    });
+
+    const result = await ses.send(command);
+    res.status(200).json({
+      message: "Email sent successfully",
+      messageId: result.MessageId,
+    });
+  } catch (error) {
+    console.error("Error sending email:", error);
+    res.status(500).json({ error: "Failed to send email" });
   }
 };
