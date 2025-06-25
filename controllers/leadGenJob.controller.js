@@ -13,7 +13,7 @@ export const searchAndExtract = async (req, res) => {
       return res.status(400).json({ error: 'tenantId and prompt are required' });
     }
 
-    // verify tenant exists & not soft‑deleted
+    // verify tenant exists & not soft-deleted
     const tenant = await prisma.tenant.findFirst({
       where: { id: tenantId, deletedAt: null }
     });
@@ -22,28 +22,38 @@ export const searchAndExtract = async (req, res) => {
     }
 
     // call the AI team API
-    const { data } = await axios.post(AI_ENDPOINT, {
-      prompt,
-      num_results,
-      offset
-    });
-    console.log('data is ',data);
+     // grab the incoming token (e.g. "Bearer abc123")
+    const incomingAuth = req.headers.authorization;
+    if (!incomingAuth) {
+      return res.status(401).json({ error: 'Missing Authorization header' });
+    }
 
-    const createdLeads = [];
-    for (const item of data.results) {
+    // call the AI team API, forwarding the token
+    const { data } = await axios.post(
+      AI_ENDPOINT,
+      { prompt, num_results, offset },
+      {
+        headers: {
+          Authorization: incomingAuth,
+          'Content-Type': 'application/json',
+        }
+      }
+    );
+    console.log('data is ', data);
+
+    // map each result to a prisma.create promise
+    const createPromises = data.results.map(item => {
       const sr = item.search_result;
       const ci = item.contact_info;
-      // pick first email/phone if any
       const contactEmail = ci.emails?.[0] ?? '';
       const contactPhone = ci.phones?.[0] ?? '';
-      // store raw snippet+link in metadata
       const metadata = {
         snippet: sr.snippet,
         link: sr.link,
         raw_contact_info: ci
       };
 
-      const lead = await prisma.lead.create({
+      return prisma.lead.create({
         data: {
           tenantId,
           companyName: sr.title,
@@ -55,14 +65,16 @@ export const searchAndExtract = async (req, res) => {
           metadata
         }
       });
+    });
 
-      createdLeads.push(lead);
-    }
+    // await them all in parallel
+    const createdLeads = await Promise.all(createPromises);
 
     return res.status(201).json(createdLeads);
   } catch (err) {
-    console.log('err is ',err);
+    console.log("err", err);
     console.error('searchAndExtract error:', err.response?.data || err.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
+

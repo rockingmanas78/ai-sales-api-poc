@@ -42,6 +42,13 @@ enum EmailStatus {
   BOUNCED
   FAILED
 }
+enum BulkEmailJobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  PAUSED
+  FAILED
+}
 
 enum CampaignStatus {
   DRAFT
@@ -66,7 +73,8 @@ model Tenant {
   templates   EmailTemplate[]
   campaigns   EmailCampaign[]
   jobs        LeadGenerationJob[]
-   emailLogs   EmailLog[]   
+   emailLogs   EmailLog[]
+   bulkEmailJobs BulkEmailJob[]   
   deletedAt   DateTime?
 }
 model CampaignLead {
@@ -112,6 +120,7 @@ model Lead {
   tenant        Tenant         @relation(fields: [tenantId], references: [id])
   emailLogs     EmailLog[]
   campaignLeads CampaignLead[] // ← add this
+  bulkEmailJobLeads BulkEmailJobLead[]
 
   @@index([tenantId, status])
 }
@@ -140,6 +149,7 @@ model EmailTemplate {
   // Relations
   tenant      Tenant       @relation(fields: [tenantId], references: [id])
   campaigns   EmailCampaign[]
+  bulkEmailJobs BulkEmailJob[]
   deletedAt   DateTime?
 }
 
@@ -155,6 +165,7 @@ model EmailCampaign {
   template      EmailTemplate  @relation(fields: [templateId], references: [id])
   logs          EmailLog[]
   campaignLeads CampaignLead[]
+  bulkEmailJobs BulkEmailJob[]
 }
 
 model EmailLog {
@@ -172,6 +183,45 @@ model EmailLog {
   campaign      EmailCampaign @relation(fields: [campaignId], references: [id])
   lead          Lead         @relation(fields: [leadId], references: [id])
   @@index([tenantId, status])
+}
+model BulkEmailJob {
+  id               String                @id @default(uuid())
+  tenantId         String
+  templateId       String
+  campaignId       String?
+  rateLimit        Int                   // emails per hour
+  status           BulkEmailJobStatus    @default(QUEUED)
+  progress         Int    @default(0)
+  total            Int    @default(0)
+  nextProcessTime  DateTime?
+  createdAt        DateTime @default(now())
+  startedAt        DateTime?
+  completedAt      DateTime?
+  lastProcessedAt DateTime?
+
+  // Relations
+  tenant    Tenant           @relation(fields: [tenantId], references: [id])
+  template  EmailTemplate    @relation(fields: [templateId], references: [id])
+  campaign  EmailCampaign?   @relation(fields: [campaignId], references: [id])
+  jobLeads  BulkEmailJobLead[]
+
+  @@index([tenantId, status])
+  @@index([status, nextProcessTime])
+}
+
+
+model BulkEmailJobLead {
+  id            String         @id @default(uuid())
+  jobId         String
+  leadId        String
+  status        EmailStatus    @default(QUEUED)
+ attempts      Int            @default(0)
+  sentAt        DateTime?
+
+  job           BulkEmailJob   @relation(fields: [jobId], references: [id])
+  lead          Lead           @relation(fields: [leadId], references: [id])
+
+  @@unique([jobId, leadId])
 }
 
 // -------------------------------------------------------------------

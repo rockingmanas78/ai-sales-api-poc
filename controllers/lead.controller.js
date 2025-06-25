@@ -46,7 +46,7 @@ export const createLead = async (req, res) => {
 // GET All Leads for a Tenant (Only non-deleted)
 export const getTenantLeads = async (req, res) => {
   try {
-    const { tenantId } = req.params;
+    const { tenantId } = req.body;
 
     if (!tenantId) {
       return res.status(400).json({ error: 'tenantId is required in request params' });
