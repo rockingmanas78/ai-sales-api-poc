@@ -152,6 +152,8 @@ model Tenant {
   countryCode String?
   zone        ZoneCode            @default(IN)
   emailLogs   EmailLog[]
+  bulkEmailJobs BulkEmailJob[] 
+
   deletedAt   DateTime?
 }
 
@@ -256,6 +258,7 @@ model EmailTemplate {
   // Relations
   tenant    Tenant          @relation(fields: [tenantId], references: [id])
   campaigns EmailCampaign[]
+  bulkEmailJobs BulkEmailJob[]
   deletedAt DateTime?
 }
 
