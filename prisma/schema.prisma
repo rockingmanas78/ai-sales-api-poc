@@ -42,6 +42,7 @@ enum EmailStatus {
   BOUNCED
   FAILED
 }
+
 enum BulkEmailJobStatus {
   QUEUED
   PROCESSING
@@ -139,22 +140,23 @@ model PriceId {
 // 3. Core multi‑tenant models
 // -------------------------------------------------------------------
 model Tenant {
-  id          String              @id @default(uuid())
-  name        String
-  plan        PlanType            @default(FREE)
-  createdAt   DateTime            @default(now())
+  id            String              @id @default(uuid())
+  name          String
+  plan          PlanType            @default(FREE)
+  createdAt     DateTime            @default(now())
   // Relations
-  users       User[]
-  leads       Lead[]
-  templates   EmailTemplate[]
-  campaigns   EmailCampaign[]
-  jobs        LeadGenerationJob[]
-  countryCode String?
-  zone        ZoneCode            @default(IN)
-  emailLogs   EmailLog[]
-  bulkEmailJobs BulkEmailJob[] 
+  users         User[]
+  leads         Lead[]
+  templates     EmailTemplate[]
+  campaigns     EmailCampaign[]
+  jobs          LeadGenerationJob[]
+  countryCode   String?
+  zone          ZoneCode            @default(IN)
+  emailLogs     EmailLog[]
+  bulkEmailJobs BulkEmailJob[]
 
-  deletedAt   DateTime?
+  deletedAt      DateTime?
+  DomainIdentity DomainIdentity[]
 }
 
 model Subscription {
@@ -227,12 +229,42 @@ model Lead {
   deletedAt    DateTime?
 
   // Relations
-  tenant        Tenant         @relation(fields: [tenantId], references: [id])
-  emailLogs     EmailLog[]
-  campaignLeads CampaignLead[] // ← add this
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  emailLogs         EmailLog[]
+  campaignLeads     CampaignLead[] // ← add this
   bulkEmailJobLeads BulkEmailJobLead[]
 
   @@index([tenantId, status])
+}
+
+// -------------------------------------------------------------------
+// 4. SES Identity Models
+// -------------------------------------------------------------------
+model DomainIdentity {
+  id                 String    @id @default(uuid())
+  tenantId           String
+  domainName         String    @unique
+  verificationToken  String?
+  verificationStatus String    @default("Pending")
+  dkimTokens         String[]
+  createdAt          DateTime  @default(now())
+  verifiedAt         DateTime?
+  deletedAt          DateTime?
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  emailIdentities EmailIdentity[]
+}
+
+model EmailIdentity {
+  id                 String    @id @default(uuid())
+  domainId           String
+  emailAddress       String    @unique
+  verificationStatus String    @default("Pending")
+  createdAt          DateTime  @default(now())
+  verifiedAt         DateTime?
+  deletedAt          DateTime?
+
+  domain DomainIdentity @relation(fields: [domainId], references: [id])
 }
 
 model Variable {
@@ -246,20 +278,20 @@ model Variable {
 }
 
 model EmailTemplate {
-  id        String          @id @default(uuid())
-  tenantId  String
-  name      String
-  subject   String
-  body      String
-  from      String // Sender email address
-  to        String
-  variable  Variable[] // Recipient email address or default recipient placeholder
-  createdAt DateTime        @default(now())
+  id            String          @id @default(uuid())
+  tenantId      String
+  name          String
+  subject       String
+  body          String
+  from          String // Sender email address
+  to            String
+  variable      Variable[] // Recipient email address or default recipient placeholder
+  createdAt     DateTime        @default(now())
   // Relations
-  tenant    Tenant          @relation(fields: [tenantId], references: [id])
-  campaigns EmailCampaign[]
+  tenant        Tenant          @relation(fields: [tenantId], references: [id])
+  campaigns     EmailCampaign[]
   bulkEmailJobs BulkEmailJob[]
-  deletedAt DateTime?
+  deletedAt     DateTime?
 }
 
 model EmailCampaign {
@@ -294,42 +326,42 @@ model EmailLog {
 
   @@index([tenantId, status])
 }
+
 model BulkEmailJob {
-  id               String                @id @default(uuid())
-  tenantId         String
-  templateId       String
-  campaignId       String?
-  rateLimit        Int                   // emails per hour
-  status           BulkEmailJobStatus    @default(QUEUED)
-  progress         Int    @default(0)
-  total            Int    @default(0)
-  nextProcessTime  DateTime?
-  createdAt        DateTime @default(now())
-  startedAt        DateTime?
-  completedAt      DateTime?
+  id              String             @id @default(uuid())
+  tenantId        String
+  templateId      String
+  campaignId      String?
+  rateLimit       Int // emails per hour
+  status          BulkEmailJobStatus @default(QUEUED)
+  progress        Int                @default(0)
+  total           Int                @default(0)
+  nextProcessTime DateTime?
+  createdAt       DateTime           @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
   lastProcessedAt DateTime?
 
   // Relations
-  tenant    Tenant           @relation(fields: [tenantId], references: [id])
-  template  EmailTemplate    @relation(fields: [templateId], references: [id])
-  campaign  EmailCampaign?   @relation(fields: [campaignId], references: [id])
-  jobLeads  BulkEmailJobLead[]
+  tenant   Tenant             @relation(fields: [tenantId], references: [id])
+  template EmailTemplate      @relation(fields: [templateId], references: [id])
+  campaign EmailCampaign?     @relation(fields: [campaignId], references: [id])
+  jobLeads BulkEmailJobLead[]
 
   @@index([tenantId, status])
   @@index([status, nextProcessTime])
 }
 
-
 model BulkEmailJobLead {
-  id            String         @id @default(uuid())
-  jobId         String
-  leadId        String
-  status        EmailStatus    @default(QUEUED)
- attempts      Int            @default(0)
-  sentAt        DateTime?
+  id       String      @id @default(uuid())
+  jobId    String
+  leadId   String
+  status   EmailStatus @default(QUEUED)
+  attempts Int         @default(0)
+  sentAt   DateTime?
 
-  job           BulkEmailJob   @relation(fields: [jobId], references: [id])
-  lead          Lead           @relation(fields: [leadId], references: [id])
+  job  BulkEmailJob @relation(fields: [jobId], references: [id])
+  lead Lead         @relation(fields: [leadId], references: [id])
 
   @@unique([jobId, leadId])
 }
