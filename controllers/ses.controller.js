@@ -123,7 +123,7 @@ export async function checkVerificationStatus(req, res, next) {
 export async function listIdentities(req, res, next) {
   try {
     const domains = await prisma.domainIdentity.findMany({
-      where: { tenantId: req.user.tenantId, deletedAt: null },
+      where: { tenantId: req.query.tenantId, deletedAt: null },
       include: {
         emailIdentities: {
           where: { deletedAt: null },
