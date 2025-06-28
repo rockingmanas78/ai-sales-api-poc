@@ -15,6 +15,7 @@ export const searchAndExtract = async (req, res) => {
     }
 
     // 1. Verify tenant exists & not soft-deleted
+    // verify tenant exists & not soft-deleted
     const tenant = await prisma.tenant.findFirst({
       where: { id: tenantId, deletedAt: null }
     });
@@ -22,37 +23,30 @@ export const searchAndExtract = async (req, res) => {
       return res.status(404).json({ error: 'Tenant not found' });
     }
 
-    // 2. Cap check for JOB metric
-    const todaysCap = await getCapFromPlanVersion(tenantId, "JOB", "DAY");
-    const ok = await capCheck("JOB", tenantId, 1, todaysCap);
-
-    if (ok === -1) {
-      return res.status(409).json({ message: "Daily job cap reached" });
+    // call the AI team API
+     // grab the incoming token (e.g. "Bearer abc123")
+    const incomingAuth = req.headers.authorization;
+    if (!incomingAuth) {
+      return res.status(401).json({ error: 'Missing Authorization header' });
     }
 
-    // 3. Log the usage before starting actual work
-    await prisma.usageEvent.create({
-      data: {
-        tenantId,
-        metric: "JOB",
-        qty: 1
+    // call the AI team API, forwarding the token
+    const { data } = await axios.post(
+      AI_ENDPOINT,
+      { prompt, num_results, offset },
+      {
+        headers: {
+          Authorization: incomingAuth,
+          'Content-Type': 'application/json',
+        }
       }
-    });
-
-    // 4. Call AI endpoint
-    const { data } = await axios.post(AI_ENDPOINT, {
-      prompt,
-      num_results,
-      offset
-    });
+    );
     console.log('data is ', data);
 
-    const createdLeads = [];
-
-    for (const item of data.results) {
+    // map each result to a prisma.create promise
+    const createPromises = data.results.map(item => {
       const sr = item.search_result;
       const ci = item.contact_info;
-
       const contactEmail = ci.emails?.[0] ?? '';
       const contactPhone = ci.phones?.[0] ?? '';
       const metadata = {
@@ -61,7 +55,7 @@ export const searchAndExtract = async (req, res) => {
         raw_contact_info: ci
       };
 
-      const lead = await prisma.lead.create({
+      return prisma.lead.create({
         data: {
           tenantId,
           companyName: sr.title,
@@ -73,13 +67,16 @@ export const searchAndExtract = async (req, res) => {
           metadata
         }
       });
+    });
 
-      createdLeads.push(lead);
-    }
+    // await them all in parallel
+    const createdLeads = await Promise.all(createPromises);
 
     return res.status(201).json(createdLeads);
   } catch (err) {
+    console.log("err", err);
     console.error('searchAndExtract error:', err.response?.data || err.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
+

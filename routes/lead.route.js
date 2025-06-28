@@ -5,7 +5,7 @@ const leadRouter = Router();
 // Create a new lead (manual upload)
 leadRouter.post('/', createLead);
 // Get all leads
-leadRouter.get('/tenant/:tenantId', getTenantLeads);
+leadRouter.get('/tenant', getTenantLeads);
 // Get single lead
 leadRouter.get('/lead/:leadId', getLeadById);
 // Update lead details

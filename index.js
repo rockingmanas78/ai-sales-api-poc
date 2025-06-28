@@ -13,6 +13,8 @@ import emailRoutes  from "./routes/ses.route.js";
 import snsRoutes from "./routes/sns.route.js";
 import bodyParser from 'body-parser';
 import leadGenRouter from './routes/leadGenJob.route.js';
+import bulkEmailRouter from './routes/bulkEmail.routes.js'
+import { processNextBatch } from './controllers/bullEmail.controller.js';
 //import reportRouter from './routes/report.route.js';
 const app = express();
 
@@ -52,6 +54,7 @@ app.use('/templates', templateRouter);
 app.use('/campaigns', campaignRouter);
 app.use('/email-logs', logRouter);
 app.use("/api/aws", emailRoutes);
+app.use("/api", bulkEmailRouter);
 //app.use('/reports', reportRouter);
 app.use('/api', bodyParser.raw({ type: '*/*' }), snsRoutes);
  
@@ -60,7 +63,14 @@ app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Internal Server Error' });
 });
-
+setInterval(async () => {
+  try {
+    await processNextBatch();
+  } catch (err) {
+    console.error("Error in batch processor:", err);
+    // swallow so the loop keeps running
+  }
+}, 60_000);
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server runs on port ${PORT}`));
