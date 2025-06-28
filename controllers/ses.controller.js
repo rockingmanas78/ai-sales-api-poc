@@ -95,7 +95,7 @@ export async function checkVerificationStatus(req, res, next) {
         verificationStatus: status,
         verifiedAt: status === 'Success' ? new Date() : undefined,
         dkimTokens: rec.DkimAttributes
-          ? Object.values(rec.DkimAttributes).map(d => d as string)
+          ? Object.values(rec.DkimAttributes).map(d => String(d))
           : undefined
       }
     });

@@ -1,5 +1,5 @@
 import express from 'express';
-import { onboardDomain,onboardEmail,checkVerificationStatus,sendTrackedEmail } from '../controllers/ses.controller.js';
+import { onboardDomain,onboardEmail,checkVerificationStatus,sendTrackedEmail, listIdentities } from '../controllers/ses.controller.js';
 
 const router = express.Router();
 
