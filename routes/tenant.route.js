@@ -7,10 +7,10 @@ import {
   softDeleteTenant,
   getAllTenant
 } from '../controllers/tenant.controllers.js';
-
+import {detectZone} from '../middlewares/geo-detect.js'
 const router = express.Router();
 
-router.post('/create',createTenant)
+router.post('/create',detectZone,createTenant)
 router.get('/get',getAllTenant);
 //  /tenant – Get current tenant’s profile, active plan, and usage caps
 router.get('/profile/:tenantId', getTenantProfile);

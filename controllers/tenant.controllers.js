@@ -5,55 +5,96 @@ import { generateTokens } from '../utils/generateTokens.js';
 const prisma = new PrismaClient();
 
 // POST /tenant/create
+// controllers/auth/register.js
+
+import { addMonths } from 'date-fns';
+import { mapCountryToZone } from '../middlewares/geo-detect.js';
+//import payments from '../../libs/payments/index.js';
+
+
+
 export const createTenant = async (req, res) => {
   try {
-    const { name, plan = 'FREE', email, password } = req.body;
+    const { name, email, password, planCode = 'FREE' } = req.body;
+    const countryCode=req.headers["x-user-zone"];
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: 'Name, email, and password are required' });
+    if (!name || !email || !password || !countryCode) {
+      return res.status(400).json({ message: 'Name, email, password, and countryCode are required' });
     }
 
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    });
-
+    const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const zone = mapCountryToZone(countryCode);
 
-    const [tenant, user] = await prisma.$transaction(async (tx) => {
-      const newTenant = await tx.tenant.create({
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create tenant
+      const tenant = await tx.tenant.create({
         data: {
           name,
-          plan,
+          plan: planCode,
+          countryCode,
+          zone,
         },
       });
 
-      const role = "ADMIN";
+      // 2. Pick latest public plan version
+      const planVersion = await tx.planVersion.findFirstOrThrow({
+        where: {
+          plan: { code: planCode },
+          zone,
+          bucket: 'PUBLIC',
+          cadence: 'MONTHLY',
+        },
+        orderBy: { version: 'desc' },
+        include: { prices: true },
+      });
 
-      const newUser = await tx.user.create({
+      // 3. Create subscription
+      const subscription = await tx.subscription.create({
+        data: {
+          tenantId: tenant.id,
+          planVersionId: planVersion.id,
+          zone,
+          status: 'ACTIVE',
+          currentStart: new Date(),
+          currentEnd: addMonths(new Date(), 1),
+        },
+      });
+
+      // 4. Create user with ADMIN role
+      const user = await tx.user.create({
         data: {
           email,
           passwordHash: hashedPassword,
-          tenantId: newTenant.id,
-          role,
+          tenantId: tenant.id,
+          role: 'ADMIN',
         },
       });
 
-      return [newTenant, newUser];
+      return { tenant, user, planVersion };
     });
 
+    const { tenant, user, planVersion } = result;
     const token = generateTokens(user);
     const { passwordHash, ...userWithoutPassword } = user;
 
-    res.status(201).json({ user: userWithoutPassword, tenant, token });
+    // let paymentInfo = null;
+    // if (planVersion.prices.length > 0) {
+    //   const gwResp = await payments.createGatewaySubscription(planVersion.prices[0].externalPriceId, tenant);
+    //   paymentInfo = { clientSecret: gwResp.clientSecret };
+    // }
+
+    res.status(201).json({ user: userWithoutPassword, tenant, token, paymentInfo });
   } catch (error) {
-    console.error('Error creating tenant and user:', error);
+    console.error('Error in registerUserAndTenant:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
 
 // GET /tenant/all
 export const getAllTenant = async (req, res) => {

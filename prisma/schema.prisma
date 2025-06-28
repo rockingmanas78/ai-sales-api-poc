@@ -14,7 +14,7 @@ generator client {
 // -------------------------------------------------------------------
 // 2. Enums
 // -------------------------------------------------------------------
-enum Plan {
+enum PlanType {
   FREE
   PRO
   ENTERPRISE
@@ -51,62 +51,171 @@ enum CampaignStatus {
   CANCELLED
 }
 
+enum ZoneCode {
+  IN
+  US
+  EU
+  AE
+  ROW
+}
+
+enum MeterMetric {
+  JOB
+  CLASSIFICATION
+  SEAT
+}
+
+enum CapPeriod {
+  DAY
+  MONTH
+  PERIOD
+}
+
+enum BillingCadence {
+  MONTHLY
+  YEARLY
+}
+
+enum Experiment {
+  PUBLIC
+  A
+  B
+  C
+}
+
+//plans model
+
+model Plan {
+  id       String        @id @default(uuid())
+  code     String        @unique
+  name     String
+  versions PlanVersion[]
+}
+
+model PlanVersion {
+  id             String         @id @default(uuid())
+  planId         String
+  version        Int
+  zone           ZoneCode
+  bucket         Experiment
+  cadence        BillingCadence
+  currency       String
+  basePriceCents Int
+  createdAt      DateTime       @default(now())
+  components     Component[]
+  prices         PriceId[]
+  Plan           Plan           @relation(fields: [planId], references: [id])
+
+  @@unique([planId, zone, bucket, cadence, version])
+}
+
+model Component {
+  id            String      @id @default(uuid())
+  planVersionId String
+  metric        MeterMetric
+  includedQty   Int // -1 = unlimited
+  capPeriod     CapPeriod
+  overageCents  Int
+  PlanVersion   PlanVersion @relation(fields: [planVersionId], references: [id])
+}
+
+model PriceId {
+  id              String      @id @default(uuid())
+  planVersionId   String
+  gateway         String // RAZORPAY | STRIPE
+  price           String
+  externalPriceId String
+  PlanVersion     PlanVersion @relation(fields: [planVersionId], references: [id])
+}
 
 // -------------------------------------------------------------------
 // 3. Core multi‑tenant models
 // -------------------------------------------------------------------
 model Tenant {
-  id          String           @id @default(uuid())
+  id          String              @id @default(uuid())
   name        String
-  plan        Plan             @default(FREE)
-  createdAt   DateTime         @default(now())
+  plan        PlanType            @default(FREE)
+  createdAt   DateTime            @default(now())
   // Relations
   users       User[]
   leads       Lead[]
   templates   EmailTemplate[]
   campaigns   EmailCampaign[]
   jobs        LeadGenerationJob[]
-   emailLogs   EmailLog[]   
+  countryCode String?
+  zone        ZoneCode            @default(IN)
+  emailLogs   EmailLog[]
   deletedAt   DateTime?
 }
+
+model Subscription {
+  id            String   @id
+  tenantId      String
+  planVersionId String
+  zone          ZoneCode
+  status        String // ACTIVE | GRACE | CANCELED
+  currentStart  DateTime
+  currentEnd    DateTime
+  brokerId      String?
+}
+
+model UsageEvent {
+  id         BigInt      @id @default(autoincrement())
+  tenantId   String
+  metric     MeterMetric
+  qty        Int
+  recordedAt DateTime    @default(now())
+
+  @@index([tenantId, recordedAt])
+}
+
+model DailyCapCounter {
+  tenantId String
+  date     DateTime
+  metric   MeterMetric
+  qty      Int
+
+  @@id([tenantId, date, metric])
+}
+
 model CampaignLead {
-  id          String         @id @default(uuid())
-  campaignId  String
-  leadId      String
-  createdAt   DateTime       @default(now())
+  id         String   @id @default(uuid())
+  campaignId String
+  leadId     String
+  createdAt  DateTime @default(now())
 
   // Relations
-  campaign    EmailCampaign  @relation(fields: [campaignId], references: [id])
-  lead        Lead           @relation(fields: [leadId], references: [id])
+  campaign EmailCampaign @relation(fields: [campaignId], references: [id])
+  lead     Lead          @relation(fields: [leadId], references: [id])
 
   @@unique([campaignId, leadId])
 }
 
 model User {
-  id            String     @id @default(uuid())
-  tenantId      String
-  email         String     @unique
-  passwordHash  String
-  role          UserRole   @default(MANAGER)
-  verified      Boolean    @default(false)
-  createdAt     DateTime   @default(now())
+  id           String    @id @default(uuid())
+  tenantId     String
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(MANAGER)
+  verified     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
   // Relations
-  tenant        Tenant     @relation(fields: [tenantId], references: [id])
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
   deletedAt    DateTime?
 }
 
 model Lead {
-  id            String         @id @default(uuid())
-  tenantId      String
-  companyName   String
-  contactEmail  String
-  contactName   String
-  contactPhone  String?
-  status        LeadStatus     @default(FOLLOW_UP)
-  confidence    Float?
-  metadata      Json?
-  createdAt     DateTime       @default(now())
-  deletedAt     DateTime?
+  id           String     @id @default(uuid())
+  tenantId     String
+  companyName  String
+  contactEmail String
+  contactName  String
+  contactPhone String?
+  status       LeadStatus @default(FOLLOW_UP)
+  confidence   Float?
+  metadata     Json?
+  createdAt    DateTime   @default(now())
+  deletedAt    DateTime?
 
   // Relations
   tenant        Tenant         @relation(fields: [tenantId], references: [id])
@@ -117,30 +226,29 @@ model Lead {
 }
 
 model Variable {
-  id             String         @id @default(uuid())
-  key            String
-  defaultValue   String?
-  templateId     String
+  id           String  @id @default(uuid())
+  key          String
+  defaultValue String?
+  templateId   String
 
   // Relations
-  template       EmailTemplate  @relation(fields: [templateId], references: [id])
+  template EmailTemplate @relation(fields: [templateId], references: [id])
 }
 
-
 model EmailTemplate {
-  id          String       @id @default(uuid())
-  tenantId    String
-  name        String
-  subject     String
-  body        String
-  from        String       // Sender email address
-  to          String 
-  variable    Variable[]  // Recipient email address or default recipient placeholder
-  createdAt   DateTime     @default(now())
+  id        String          @id @default(uuid())
+  tenantId  String
+  name      String
+  subject   String
+  body      String
+  from      String // Sender email address
+  to        String
+  variable  Variable[] // Recipient email address or default recipient placeholder
+  createdAt DateTime        @default(now())
   // Relations
-  tenant      Tenant       @relation(fields: [tenantId], references: [id])
-  campaigns   EmailCampaign[]
-  deletedAt   DateTime?
+  tenant    Tenant          @relation(fields: [tenantId], references: [id])
+  campaigns EmailCampaign[]
+  deletedAt DateTime?
 }
 
 model EmailCampaign {
@@ -158,19 +266,20 @@ model EmailCampaign {
 }
 
 model EmailLog {
-  id            String       @id @default(uuid())
-  tenantId      String
-  campaignId    String
-  leadId        String
-  status        EmailStatus  @default(QUEUED)
-  sentAt        DateTime?
-  openedAt      DateTime?
-  clickedAt     DateTime?
-  repliedAt     DateTime?  
+  id         String        @id @default(uuid())
+  tenantId   String
+  campaignId String
+  leadId     String
+  status     EmailStatus   @default(QUEUED)
+  sentAt     DateTime?
+  openedAt   DateTime?
+  clickedAt  DateTime?
+  repliedAt  DateTime?
   // Relations
-  tenant        Tenant       @relation(fields: [tenantId], references: [id])
-  campaign      EmailCampaign @relation(fields: [campaignId], references: [id])
-  lead          Lead         @relation(fields: [leadId], references: [id])
+  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+  campaign   EmailCampaign @relation(fields: [campaignId], references: [id])
+  lead       Lead          @relation(fields: [leadId], references: [id])
+
   @@index([tenantId, status])
 }
 
@@ -178,17 +287,18 @@ model EmailLog {
 // 4. Lead‑generation job tracking (scraper / AI micro‑service hand‑off)
 // -------------------------------------------------------------------
 model LeadGenerationJob {
-  id            String     @id @default(uuid())
-  tenantId      String
-  prompt        String
-  industry      String?
-  location      String?
-  status        String     @default("QUEUED")  // QUEUED | PROCESSING | DONE | FAILED
-  batchId       String?
-  createdAt     DateTime   @default(now())
-  completedAt   DateTime?
+  id          String    @id @default(uuid())
+  tenantId    String
+  prompt      String
+  industry    String?
+  location    String?
+  status      String    @default("QUEUED") // QUEUED | PROCESSING | DONE | FAILED
+  batchId     String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
   // Relations
-  tenant        Tenant     @relation(fields: [tenantId], references: [id])
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+
   @@index([tenantId, status])
 }
 
