@@ -96,7 +96,7 @@ enum Experiment {
 model Plan {
   id       String        @id @default(uuid())
   code     String        @unique
-  name     String
+  name     String       
   versions PlanVersion[]
 }
 
@@ -154,13 +154,12 @@ model Tenant {
   zone          ZoneCode            @default(IN)
   emailLogs     EmailLog[]
   bulkEmailJobs BulkEmailJob[]
-
   deletedAt      DateTime?
   DomainIdentity DomainIdentity[]
 }
 
 model Subscription {
-  id            String   @id
+  id            String              @id @default(uuid())
   tenantId      String
   planVersionId String
   zone          ZoneCode

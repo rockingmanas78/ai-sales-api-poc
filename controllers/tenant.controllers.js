@@ -15,13 +15,31 @@ import { mapCountryToZone } from '../middlewares/geo-detect.js';
 
 export const createTenant = async (req, res) => {
   try {
-    const { name, email, password, planCode = 'FREE' } = req.body;
-    const countryCode=req.headers["x-user-zone"];
+    const { name, email, password, versionId } = req.body;
+    const countryCode = req.headers["x-user-zone"];
 
     if (!name || !email || !password || !countryCode) {
       return res.status(400).json({ message: 'Name, email, password, and countryCode are required' });
     }
 
+    if (!versionId) {
+      return res.status(400).json({ message: 'versionId is required' });
+    }
+
+    // Get plan version and plan code
+    const  planVersionRecord = await prisma.planVersion.findUnique({
+      where: { id: versionId },
+      include: { Plan: true },
+    });
+
+    if (!planVersionRecord) {
+      return res.status(400).json({ message: 'Invalid plan version' });
+    }
+
+    const planCode = planVersionRecord.Plan.code;
+
+
+    // Check for existing user
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
@@ -41,23 +59,11 @@ export const createTenant = async (req, res) => {
         },
       });
 
-      // 2. Pick latest public plan version
-      const planVersion = await tx.planVersion.findFirstOrThrow({
-        where: {
-          plan: { code: planCode },
-          zone,
-          bucket: 'PUBLIC',
-          cadence: 'MONTHLY',
-        },
-        orderBy: { version: 'desc' },
-        include: { prices: true },
-      });
-
-      // 3. Create subscription
+      // 2. Create subscription
       const subscription = await tx.subscription.create({
         data: {
           tenantId: tenant.id,
-          planVersionId: planVersion.id,
+          planVersionId: versionId,
           zone,
           status: 'ACTIVE',
           currentStart: new Date(),
@@ -65,7 +71,7 @@ export const createTenant = async (req, res) => {
         },
       });
 
-      // 4. Create user with ADMIN role
+      // 3. Create user
       const user = await tx.user.create({
         data: {
           email,
@@ -75,20 +81,21 @@ export const createTenant = async (req, res) => {
         },
       });
 
-      return { tenant, user, planVersion };
+      return { tenant, user, planVersionRecord };
     });
 
-    const { tenant, user, planVersion } = result;
+    const { tenant, user} = result;
     const token = generateTokens(user);
     const { passwordHash, ...userWithoutPassword } = user;
 
+    // Optional payment integration
     // let paymentInfo = null;
-    // if (planVersion.prices.length > 0) {
-    //   const gwResp = await payments.createGatewaySubscription(planVersion.prices[0].externalPriceId, tenant);
+    // if (selectedVersion.prices.length > 0) {
+    //   const gwResp = await payments.createGatewaySubscription(selectedVersion.prices[0].externalPriceId, tenant);
     //   paymentInfo = { clientSecret: gwResp.clientSecret };
     // }
 
-    res.status(201).json({ user: userWithoutPassword, tenant, token, paymentInfo });
+    res.status(201).json({ user: userWithoutPassword, tenant, token });
   } catch (error) {
     console.error('Error in registerUserAndTenant:', error);
     res.status(500).json({ error: 'Internal server error' });
