@@ -11,7 +11,7 @@ export function detectZone(req, res, next) {
       req.headers["x-user-zone"] = zone;
       req.headers["x-user-country"] = data.country;
     } else {
-      console.warn("IP info failed:", err?.message || err);
+      console.warn("IP info failed:", err);
     }
     next();
   });

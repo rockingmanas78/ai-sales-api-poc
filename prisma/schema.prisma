@@ -1,20 +1,282 @@
-// Prisma schema for the multi‑tenant lead‑generation & CRM platform
-// -------------------------------------------------------------------
-// 1. Configure datasource & client generator
-// -------------------------------------------------------------------
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
-}
-
 generator client {
   provider = "prisma-client-js"
 }
 
-// -------------------------------------------------------------------
-// 2. Enums
-// -------------------------------------------------------------------
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Plan {
+  id       String        @id @default(uuid())
+  code     String        @unique
+  name     String
+  versions PlanVersion[]
+}
+
+model PlanVersion {
+  id             String         @id @default(uuid())
+  planId         String
+  version        Int
+  zone           ZoneCode
+  bucket         Experiment
+  cadence        BillingCadence
+  currency       String
+  basePriceCents Int
+  createdAt      DateTime       @default(now())
+  components     Component[]
+  Plan           Plan           @relation(fields: [planId], references: [id])
+  prices         PriceId[]
+
+  @@unique([planId, zone, bucket, cadence, version])
+}
+
+model Component {
+  id            String      @id @default(uuid())
+  planVersionId String
+  metric        MeterMetric
+  includedQty   Int
+  capPeriod     CapPeriod
+  overageCents  Int
+  PlanVersion   PlanVersion @relation(fields: [planVersionId], references: [id])
+}
+
+model PriceId {
+  id              String      @id @default(uuid())
+  planVersionId   String
+  gateway         String
+  price           String
+  externalPriceId String
+  PlanVersion     PlanVersion @relation(fields: [planVersionId], references: [id])
+}
+
+model Tenant {
+  id             String              @id @default(uuid())
+  name           String
+  plan           PlanType            @default(FREE)
+  createdAt      DateTime            @default(now())
+  countryCode    String?
+  zone           ZoneCode            @default(IN)
+  deletedAt      DateTime?
+  bulkEmailJobs  BulkEmailJob[]
+  DomainIdentity DomainIdentity[]
+  campaigns      EmailCampaign[]
+  emailLogs      EmailLog[]
+  templates      EmailTemplate[]
+  leads          Lead[]
+  jobs           LeadGenerationJob[]
+  users          User[]
+}
+
+model Subscription {
+  id            String   @id @default(uuid())
+  tenantId      String
+  planVersionId String
+  zone          ZoneCode
+  status        String
+  currentStart  DateTime
+  currentEnd    DateTime
+  brokerId      String?
+}
+
+model UsageEvent {
+  id         BigInt      @id @default(autoincrement())
+  tenantId   String
+  metric     MeterMetric
+  qty        Int
+  recordedAt DateTime    @default(now())
+
+  @@index([tenantId, recordedAt])
+}
+
+model DailyCapCounter {
+  tenantId String
+  date     DateTime
+  metric   MeterMetric
+  qty      Int
+
+  @@id([tenantId, date, metric])
+}
+
+model CampaignLead {
+  id         String        @id @default(uuid())
+  campaignId String
+  leadId     String
+  createdAt  DateTime      @default(now())
+  campaign   EmailCampaign @relation(fields: [campaignId], references: [id])
+  lead       Lead          @relation(fields: [leadId], references: [id])
+
+  @@unique([campaignId, leadId])
+}
+
+model User {
+  id           String    @id @default(uuid())
+  tenantId     String
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(MANAGER)
+  verified     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+}
+
+model Lead {
+  id                String             @id @default(uuid())
+  tenantId          String
+  companyName       String
+  contactEmail      String[]
+  contactName       String?
+  contactPhone      String[]
+  status            LeadStatus         @default(FOLLOW_UP)
+  confidence        Float?
+  metadata          Json?
+  createdAt         DateTime           @default(now())
+  deletedAt         DateTime?
+  contactAddress    String[]
+  bulkEmailJobLeads BulkEmailJobLead[]
+  campaignLeads     CampaignLead[]
+  emailLogs         EmailLog[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status])
+}
+
+model DomainIdentity {
+  id                 String          @id @default(uuid())
+  tenantId           String
+  domainName         String          @unique
+  verificationToken  String?
+  verificationStatus String          @default("Pending")
+  dkimTokens         String[]
+  createdAt          DateTime        @default(now())
+  verifiedAt         DateTime?
+  deletedAt          DateTime?
+  tenant             Tenant          @relation(fields: [tenantId], references: [id])
+  emailIdentities    EmailIdentity[]
+}
+
+model EmailIdentity {
+  id                 String         @id @default(uuid())
+  domainId           String
+  emailAddress       String         @unique
+  verificationStatus String         @default("Pending")
+  createdAt          DateTime       @default(now())
+  verifiedAt         DateTime?
+  deletedAt          DateTime?
+  domain             DomainIdentity @relation(fields: [domainId], references: [id])
+}
+
+model Variable {
+  id           String        @id @default(uuid())
+  key          String
+  defaultValue String?
+  templateId   String
+  template     EmailTemplate @relation(fields: [templateId], references: [id])
+}
+
+model EmailTemplate {
+  id            String          @id @default(uuid())
+  tenantId      String
+  name          String
+  subject       String
+  body          String
+  from          String
+  to            String
+  createdAt     DateTime        @default(now())
+  deletedAt     DateTime?
+  bulkEmailJobs BulkEmailJob[]
+  campaigns     EmailCampaign[]
+  tenant        Tenant          @relation(fields: [tenantId], references: [id])
+  variable      Variable[]
+}
+
+model EmailCampaign {
+  id            String         @id @default(uuid())
+  tenantId      String
+  templateId    String
+  scheduledAt   DateTime?
+  createdAt     DateTime       @default(now())
+  status        CampaignStatus @default(DRAFT)
+  bulkEmailJobs BulkEmailJob[]
+  campaignLeads CampaignLead[]
+  template      EmailTemplate  @relation(fields: [templateId], references: [id])
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  logs          EmailLog[]
+}
+
+model EmailLog {
+  id         String        @id @default(uuid())
+  tenantId   String
+  campaignId String
+  leadId     String
+  status     EmailStatus   @default(QUEUED)
+  sentAt     DateTime?
+  openedAt   DateTime?
+  clickedAt  DateTime?
+  repliedAt  DateTime?
+  campaign   EmailCampaign @relation(fields: [campaignId], references: [id])
+  lead       Lead          @relation(fields: [leadId], references: [id])
+  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status])
+}
+
+model BulkEmailJob {
+  id              String             @id @default(uuid())
+  tenantId        String
+  templateId      String
+  campaignId      String?
+  rateLimit       Int
+  status          BulkEmailJobStatus @default(QUEUED)
+  progress        Int                @default(0)
+  total           Int                @default(0)
+  nextProcessTime DateTime?
+  createdAt       DateTime           @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+  lastProcessedAt DateTime?
+  campaign        EmailCampaign?     @relation(fields: [campaignId], references: [id])
+  template        EmailTemplate      @relation(fields: [templateId], references: [id])
+  tenant          Tenant             @relation(fields: [tenantId], references: [id])
+  jobLeads        BulkEmailJobLead[]
+
+  @@index([tenantId, status])
+  @@index([status, nextProcessTime])
+}
+
+model BulkEmailJobLead {
+  id       String       @id @default(uuid())
+  jobId    String
+  leadId   String
+  status   EmailStatus  @default(QUEUED)
+  attempts Int          @default(0)
+  sentAt   DateTime?
+  job      BulkEmailJob @relation(fields: [jobId], references: [id])
+  lead     Lead         @relation(fields: [leadId], references: [id])
+
+  @@unique([jobId, leadId])
+}
+
+model LeadGenerationJob {
+  id             String    @id @default(uuid())
+  tenantId       String
+  prompt         String?
+  industry       String?
+  location       String?
+  status         String    @default("QUEUED")
+  batchId        String?
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+  totalRequested Int
+  generatedCount Int       @default(0)
+  urls           String[]  @default([])
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status])
+}
+
 enum PlanType {
   FREE
   PRO
@@ -91,306 +353,3 @@ enum Experiment {
   B
   C
 }
-
-//plans model
-
-model Plan {
-  id       String        @id @default(uuid())
-  code     String        @unique
-  name     String       
-  versions PlanVersion[]
-}
-
-model PlanVersion {
-  id             String         @id @default(uuid())
-  planId         String
-  version        Int
-  zone           ZoneCode
-  bucket         Experiment
-  cadence        BillingCadence
-  currency       String
-  basePriceCents Int
-  createdAt      DateTime       @default(now())
-  components     Component[]
-  prices         PriceId[]
-  Plan           Plan           @relation(fields: [planId], references: [id])
-
-  @@unique([planId, zone, bucket, cadence, version])
-}
-
-model Component {
-  id            String      @id @default(uuid())
-  planVersionId String
-  metric        MeterMetric
-  includedQty   Int // -1 = unlimited
-  capPeriod     CapPeriod
-  overageCents  Int
-  PlanVersion   PlanVersion @relation(fields: [planVersionId], references: [id])
-}
-
-model PriceId {
-  id              String      @id @default(uuid())
-  planVersionId   String
-  gateway         String // RAZORPAY | STRIPE
-  price           String
-  externalPriceId String
-  PlanVersion     PlanVersion @relation(fields: [planVersionId], references: [id])
-}
-
-// -------------------------------------------------------------------
-// 3. Core multi‑tenant models
-// -------------------------------------------------------------------
-model Tenant {
-  id            String              @id @default(uuid())
-  name          String
-  plan          PlanType            @default(FREE)
-  createdAt     DateTime            @default(now())
-  // Relations
-  users         User[]
-  leads         Lead[]
-  templates     EmailTemplate[]
-  campaigns     EmailCampaign[]
-  jobs          LeadGenerationJob[]
-  countryCode   String?
-  zone          ZoneCode            @default(IN)
-  emailLogs     EmailLog[]
-  bulkEmailJobs BulkEmailJob[]
-  deletedAt      DateTime?
-  DomainIdentity DomainIdentity[]
-}
-
-model Subscription {
-  id            String              @id @default(uuid())
-  tenantId      String
-  planVersionId String
-  zone          ZoneCode
-  status        String // ACTIVE | GRACE | CANCELED
-  currentStart  DateTime
-  currentEnd    DateTime
-  brokerId      String?
-}
-
-model UsageEvent {
-  id         BigInt      @id @default(autoincrement())
-  tenantId   String
-  metric     MeterMetric
-  qty        Int
-  recordedAt DateTime    @default(now())
-
-  @@index([tenantId, recordedAt])
-}
-
-model DailyCapCounter {
-  tenantId String
-  date     DateTime
-  metric   MeterMetric
-  qty      Int
-
-  @@id([tenantId, date, metric])
-}
-
-model CampaignLead {
-  id         String   @id @default(uuid())
-  campaignId String
-  leadId     String
-  createdAt  DateTime @default(now())
-
-  // Relations
-  campaign EmailCampaign @relation(fields: [campaignId], references: [id])
-  lead     Lead          @relation(fields: [leadId], references: [id])
-
-  @@unique([campaignId, leadId])
-}
-
-model User {
-  id           String    @id @default(uuid())
-  tenantId     String
-  email        String    @unique
-  passwordHash String
-  role         UserRole  @default(MANAGER)
-  verified     Boolean   @default(false)
-  createdAt    DateTime  @default(now())
-  // Relations
-  tenant       Tenant    @relation(fields: [tenantId], references: [id])
-  deletedAt    DateTime?
-}
-
-model Lead {
-  id           String     @id @default(uuid())
-  tenantId     String
-  companyName  String
-  contactEmail String
-  contactName  String
-  contactPhone String?
-  status       LeadStatus @default(FOLLOW_UP)
-  confidence   Float?
-  metadata     Json?
-  createdAt    DateTime   @default(now())
-  deletedAt    DateTime?
-
-  // Relations
-  tenant            Tenant             @relation(fields: [tenantId], references: [id])
-  emailLogs         EmailLog[]
-  campaignLeads     CampaignLead[] // ← add this
-  bulkEmailJobLeads BulkEmailJobLead[]
-
-  @@index([tenantId, status])
-}
-
-// -------------------------------------------------------------------
-// 4. SES Identity Models
-// -------------------------------------------------------------------
-model DomainIdentity {
-  id                 String    @id @default(uuid())
-  tenantId           String
-  domainName         String    @unique
-  verificationToken  String?
-  verificationStatus String    @default("Pending")
-  dkimTokens         String[]
-  createdAt          DateTime  @default(now())
-  verifiedAt         DateTime?
-  deletedAt          DateTime?
-
-  tenant          Tenant          @relation(fields: [tenantId], references: [id])
-  emailIdentities EmailIdentity[]
-}
-
-model EmailIdentity {
-  id                 String    @id @default(uuid())
-  domainId           String
-  emailAddress       String    @unique
-  verificationStatus String    @default("Pending")
-  createdAt          DateTime  @default(now())
-  verifiedAt         DateTime?
-  deletedAt          DateTime?
-
-  domain DomainIdentity @relation(fields: [domainId], references: [id])
-}
-
-model Variable {
-  id           String  @id @default(uuid())
-  key          String
-  defaultValue String?
-  templateId   String
-
-  // Relations
-  template EmailTemplate @relation(fields: [templateId], references: [id])
-}
-
-model EmailTemplate {
-  id            String          @id @default(uuid())
-  tenantId      String
-  name          String
-  subject       String
-  body          String
-  from          String // Sender email address
-  to            String
-  variable      Variable[] // Recipient email address or default recipient placeholder
-  createdAt     DateTime        @default(now())
-  // Relations
-  tenant        Tenant          @relation(fields: [tenantId], references: [id])
-  campaigns     EmailCampaign[]
-  bulkEmailJobs BulkEmailJob[]
-  deletedAt     DateTime?
-}
-
-model EmailCampaign {
-  id            String         @id @default(uuid())
-  tenantId      String
-  templateId    String
-  scheduledAt   DateTime?
-  createdAt     DateTime       @default(now())
-  status        CampaignStatus @default(DRAFT) // <--- add this
-  // Relations
-  tenant        Tenant         @relation(fields: [tenantId], references: [id])
-  template      EmailTemplate  @relation(fields: [templateId], references: [id])
-  logs          EmailLog[]
-  campaignLeads CampaignLead[]
-  bulkEmailJobs BulkEmailJob[]
-}
-
-model EmailLog {
-  id         String        @id @default(uuid())
-  tenantId   String
-  campaignId String
-  leadId     String
-  status     EmailStatus   @default(QUEUED)
-  sentAt     DateTime?
-  openedAt   DateTime?
-  clickedAt  DateTime?
-  repliedAt  DateTime?
-  // Relations
-  tenant     Tenant        @relation(fields: [tenantId], references: [id])
-  campaign   EmailCampaign @relation(fields: [campaignId], references: [id])
-  lead       Lead          @relation(fields: [leadId], references: [id])
-
-  @@index([tenantId, status])
-}
-
-model BulkEmailJob {
-  id              String             @id @default(uuid())
-  tenantId        String
-  templateId      String
-  campaignId      String?
-  rateLimit       Int // emails per hour
-  status          BulkEmailJobStatus @default(QUEUED)
-  progress        Int                @default(0)
-  total           Int                @default(0)
-  nextProcessTime DateTime?
-  createdAt       DateTime           @default(now())
-  startedAt       DateTime?
-  completedAt     DateTime?
-  lastProcessedAt DateTime?
-
-  // Relations
-  tenant   Tenant             @relation(fields: [tenantId], references: [id])
-  template EmailTemplate      @relation(fields: [templateId], references: [id])
-  campaign EmailCampaign?     @relation(fields: [campaignId], references: [id])
-  jobLeads BulkEmailJobLead[]
-
-  @@index([tenantId, status])
-  @@index([status, nextProcessTime])
-}
-
-model BulkEmailJobLead {
-  id       String      @id @default(uuid())
-  jobId    String
-  leadId   String
-  status   EmailStatus @default(QUEUED)
-  attempts Int         @default(0)
-  sentAt   DateTime?
-
-  job  BulkEmailJob @relation(fields: [jobId], references: [id])
-  lead Lead         @relation(fields: [leadId], references: [id])
-
-  @@unique([jobId, leadId])
-}
-
-// -------------------------------------------------------------------
-// 4. Lead‑generation job tracking (scraper / AI micro‑service hand‑off)
-// -------------------------------------------------------------------
-model LeadGenerationJob {
-  id          String    @id @default(uuid())
-  tenantId    String
-  prompt      String
-  industry    String?
-  location    String?
-  status      String    @default("QUEUED") // QUEUED | PROCESSING | DONE | FAILED
-  batchId     String?
-  createdAt   DateTime  @default(now())
-  completedAt DateTime?
-  // Relations
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId, status])
-}
-
-// -------------------------------------------------------------------
-// 5. Row‑Level Security (PostgreSQL)
-// -------------------------------------------------------------------
-// RLS policies are defined in migrations, not in Prisma. Ensure every model
-// includes `tenantId` and your migrations add:
-//   ALTER TABLE "Lead" ENABLE ROW LEVEL SECURITY;
-//   CREATE POLICY "tenant_isolation" ON "Lead"
-//   USING (tenantId = current_setting('app.tenant_id'));
-// …repeat for other tables.

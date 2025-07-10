@@ -47,14 +47,14 @@ app.use(cors({
 
 
 // Mount all routers
-app.use('/auth', authRouter);
-app.use('/tenants', tenantRouter);
-app.use('/users', userRouter);
-app.use('/lead-jobs', leadGenRouter);
-app.use('/leads', leadRouter);
-app.use('/templates', templateRouter);
-app.use('/campaigns', campaignRouter);
-app.use('/email-logs', logRouter);
+app.use('/api/auth', authRouter);
+app.use('/api/tenants', tenantRouter);
+app.use('/api/users', userRouter);
+app.use('/api/lead-jobs', leadGenRouter);
+app.use('/api/leads', leadRouter);
+app.use('/api/templates', templateRouter);
+app.use('/api/campaigns', campaignRouter);
+app.use('/api/email-logs', logRouter);
 app.use("/api/aws", emailRoutes);
 app.use("/api", bulkEmailRouter);
 //app.use('/reports', reportRouter);
