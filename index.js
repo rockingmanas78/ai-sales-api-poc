@@ -14,10 +14,13 @@ import snsRoutes from "./routes/sns.route.js";
 import bodyParser from 'body-parser';
 import leadGenRouter from './routes/leadGenJob.route.js';
 import bulkEmailRouter from './routes/bulkEmail.routes.js'
-import { processNextBatch } from './controllers/bullEmail.controller.js';
+import { processNextBatch } from './controllers/bulkEmail.controller.js';
 import pricingRoute     from './routes/pricing.route.js'
 import updateSuscriptionRoute from './routes/updateSuscription.route.js'
 //import reportRouter from './routes/report.route.js';
+import dashboardRouter from './routes/dashboard.route.js';
+
+
 const app = express();
 
 dotenv.config();
@@ -43,25 +46,23 @@ app.use(cors({
   }));
 
 
-
-
-
 // Mount all routers
-app.use('/auth', authRouter);
-app.use('/tenants', tenantRouter);
-app.use('/users', userRouter);
-app.use('/lead-jobs', leadGenRouter);
-app.use('/leads', leadRouter);
-app.use('/templates', templateRouter);
-app.use('/campaigns', campaignRouter);
-app.use('/email-logs', logRouter);
+app.use('/api/auth', authRouter);
+app.use('/api/tenants', tenantRouter);
+app.use('/api/users', userRouter);
+app.use('/api/lead-jobs', leadGenRouter);
+app.use('/api/leads', leadRouter);
+app.use('/api/templates', templateRouter);
+app.use('/api/campaigns', campaignRouter);
+app.use('/api/email-logs', logRouter);
 app.use("/api/aws", emailRoutes);
 app.use("/api", bulkEmailRouter);
 //app.use('/reports', reportRouter);
 app.use('/api', bodyParser.raw({ type: '*/*' }), snsRoutes);
 app.use("/api/plan", pricingRoute);
- app.use("/api/suscription", updateSuscriptionRoute);
- 
+app.use("/api/suscription", updateSuscriptionRoute);
+app.use('/api', dashboardRouter);
+
 // Global error handler
 app.use((err, req, res, next) => {
   console.error(err);

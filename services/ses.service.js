@@ -39,7 +39,7 @@ export async function sendEmail({ toEmail, subject, htmlBody, configurationSetNa
       Body:    { Html: { Data: htmlBody, Charset: 'UTF-8' } }
     },
     Source: process.env.SES_SOURCE_EMAIL,
-    ConfigurationSetName: configurationSetName
+    //ConfigurationSetName: configurationSetName
   });
   return await ses.send(cmd);
 }

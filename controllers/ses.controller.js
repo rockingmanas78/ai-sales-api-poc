@@ -1,3 +1,6 @@
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
+
 import { 
   verifyEmailIdentity, 
   getIdentityVerificationAttributes,
@@ -10,6 +13,7 @@ export async function onboardDomain(req, res, next) {
   try {
     const { domainName } = req.body;
     if (!domainName) return res.status(400).json({ error: 'Domain name is required' });
+    if (!req.user.tenantId) return res.status(400).json({ error: 'Tenant id is required' });
 
     // SES: initiate domain verification
     const token = await verifyDomainIdentity(domainName);
@@ -36,6 +40,7 @@ export async function onboardDomain(req, res, next) {
       }
     });
   } catch (err) {
+    console.log(err);
     next(err);
   }
 }
@@ -49,13 +54,25 @@ export async function onboardEmail(req, res, next) {
 
     // Ensure domain exists & is verified
     const domain = await prisma.domainIdentity.findFirst({
-      where: { id: domainId, tenantId: req.user.tenantId, verificationStatus: 'Success' }
+      where: { id: domainId,
+        tenantId: req.user.tenantId,
+        verificationStatus: 'Success' }
     });
     if (!domain)
       return res.status(400).json({ error: 'Domain not found or not verified' });
 
+    //Check if this email already exists in DB
+    const existing = await prisma.emailIdentity.findUnique({
+      where: { emailAddress }
+    });
+    if (existing) {
+      return res.status(200).json({
+        message: `Email ${emailAddress} is already onboarded.`,
+        email: existing
+      });
+    }
     // SES: initiate email verification
-    await verifyEmailIdentity(emailAddress);
+    await verifyEmailIdentity(emailAddress); //This sends a verification email to the email address.User must click the link in that email to complete verification.
 
     // Persist EmailIdentity
     const email = await prisma.emailIdentity.create({
@@ -117,7 +134,7 @@ export async function checkVerificationStatus(req, res, next) {
   } catch (err) {
     next(err);
   }
-}
+};
 
 // GET /ses/identities
 export async function listIdentities(req, res, next) {
@@ -141,7 +158,9 @@ export async function listIdentities(req, res, next) {
 export async function sendTrackedEmail(req, res, next) {
   try {
     const { toEmail, subject, htmlBody, configurationSetName } = req.body;
-    if (!toEmail || !subject || !htmlBody || !configurationSetName)
+    if (!toEmail || !subject || !htmlBody
+      // || !configurationSetName
+    )
       return res.status(400).json({
         error: 'toEmail, subject, htmlBody, and configurationSetName are required'
       });

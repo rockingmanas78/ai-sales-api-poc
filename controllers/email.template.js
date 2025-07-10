@@ -1,8 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
+
 // Create a new email template
 export const createTemplate = async (req, res) => {
+  
   try {
     const { tenantId, name, subject, body, from, to, variable } = req.body;
 
@@ -81,7 +83,7 @@ export const getTemplateById = async (req, res) => {
     const  tenantId  = req.query.tenantId;
 
     if (!tenantId) {
-      return res.status(400).json({ error: "tenantId is required in body" });
+      return res.status(400).json({ error: "tenantId is required in query." });
     }
 
     const template = await prisma.emailTemplate.findFirst({
@@ -163,7 +165,7 @@ export const deleteTemplate = async (req, res) => {
     const  tenantId  = req.query.tenantId;
 
     if (!tenantId) {
-      return res.status(400).json({ error: "tenantId is required in body" });
+      return res.status(400).json({ error: "tenantId is required in query." });
     }
 
     const existingTemplate = await prisma.emailTemplate.findFirst({
