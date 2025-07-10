@@ -153,6 +153,7 @@ model DomainIdentity {
   createdAt          DateTime        @default(now())
   verifiedAt         DateTime?
   deletedAt          DateTime?
+  dkimRecords        Json            @default("[]")
   tenant             Tenant          @relation(fields: [tenantId], references: [id])
   emailIdentities    EmailIdentity[]
 }

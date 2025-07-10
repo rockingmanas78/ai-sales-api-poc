@@ -1,11 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
-
 import { 
   verifyEmailIdentity, 
   getIdentityVerificationAttributes,
   sendEmail as sesSendEmail,
   verifyDomainIdentity,
+  enableDKIMSigning,
 } from "../services/ses.service.js";
 
 // POST /ses/onboard-domain
@@ -13,10 +13,20 @@ export async function onboardDomain(req, res, next) {
   try {
     const { domainName } = req.body;
     if (!domainName) return res.status(400).json({ error: 'Domain name is required' });
-    if (!req.user.tenantId) return res.status(400).json({ error: 'Tenant id is required' });
+    if (!req.user.tenantId) return res.status(400).json({ error: 'Tenant details is required' });
+
+        // 0. Prevent duplicates
+    const existing = await prisma.domainIdentity.findFirst({
+      where: { domainName }
+    });
+    if (existing) {
+      return res
+        .status(409)
+        .json({ error: `Domain ${domainName} is already onboarded for an account.` });
+    }
 
     // SES: initiate domain verification
-    const token = await verifyDomainIdentity(domainName);
+    const { records, token } = await verifyDomainIdentity(domainName);
 
     // Persist DomainIdentity record
     const domain = await prisma.domainIdentity.create({
@@ -25,19 +35,17 @@ export async function onboardDomain(req, res, next) {
         domainName,
         verificationToken: token,
         verificationStatus: 'Pending',
-        dkimTokens: []
+        dkimTokens: [],
+        dkimRecords: records
       }
     });
 
+    const signing = await enableDKIMSigning(domainName);
+
     return res.json({
-      message: 'Domain verification initiated',
+      message: "Domain onboarding initiated. Add these DNS records:",
       domain,
-      dnsInstruction: {
-        type: 'TXT',
-        name: `_amazonses.${domainName}`,
-        value: token,
-        ttl:   1800
-      }
+      dnsInstruction: records
     });
   } catch (err) {
     console.log(err);
@@ -106,25 +114,25 @@ export async function checkVerificationStatus(req, res, next) {
     const status = rec.VerificationStatus;
 
     // Update DomainIdentity if matches
-    await prisma.domainIdentity.updateMany({
-      where: { tenantId: req.user.tenantId, domainName: identity },
-      data: {
-        verificationStatus: status,
-        verifiedAt: status === 'Success' ? new Date() : undefined,
-        dkimTokens: rec.DkimAttributes
-          ? Object.values(rec.DkimAttributes).map(d => String(d))
-          : undefined
-      }
-    });
+    // await prisma.domainIdentity.updateMany({
+    //   where: { tenantId: req.user.tenantId, domainName: identity },
+    //   data: {
+    //     verificationStatus: status,
+    //     verifiedAt: status === 'Success' ? new Date() : undefined,
+    //     dkimTokens: rec.DkimAttributes
+    //       ? Object.values(rec.DkimAttributes).map(d => String(d))
+    //       : undefined
+    //   }
+    // });
 
     // Update EmailIdentity if matches
-    await prisma.emailIdentity.updateMany({
-      where: { domain: { tenantId: req.user.tenantId }, emailAddress: identity },
-      data: {
-        verificationStatus: status,
-        verifiedAt: status === 'Success' ? new Date() : undefined
-      }
-    });
+    // await prisma.emailIdentity.updateMany({
+    //   where: { domain: { tenantId: req.user.tenantId }, emailAddress: identity },
+    //   data: {
+    //     verificationStatus: status,
+    //     verifiedAt: status === 'Success' ? new Date() : undefined
+    //   }
+    // });
 
     return res.json({
       identity,

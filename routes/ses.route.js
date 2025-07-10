@@ -1,16 +1,9 @@
 import express from 'express';
 import { onboardDomain,onboardEmail,checkVerificationStatus,sendTrackedEmail, listIdentities } from '../controllers/ses.controller.js';
-
 import verifyToken from '../middlewares/verifyToken.js';
 import authorize from '../middlewares/rbac.js';
 
 const router = express.Router();
-
-// POST /api/email/send-email
-// router.post('/onboard-domain',onboardDomain);
-// router.post('/onboard-email',onboardEmail);
-// router.post('/verify-status',checkVerificationStatus);
-// router.post("/send-email", sendTrackedEmail);
 
 router.post('/onboard-domain', verifyToken(), authorize('manage_emails'), onboardDomain);
 router.post('/onboard-email', verifyToken(), authorize('manage_emails'), onboardEmail);
