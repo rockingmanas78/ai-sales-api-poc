@@ -7,7 +7,7 @@ export const getEmailLogs = async (req, res) => {
     const { tenantId } = req.params;
 
     if (!tenantId) {
-      return res.status(400).json({ error: 'tenantId is required in request body' });
+      return res.status(400).json({ error: 'tenantId is required in URL params.' });
     }
 
     const logs = await prisma.emailLog.findMany({
@@ -33,7 +33,7 @@ export const getEmailLogById = async (req, res) => {
     const  tenantId  = req.query.tenantId;
 
     if (!tenantId) {
-      return res.status(400).json({ error: 'tenantId is required in request body' });
+      return res.status(400).json({ error: 'tenantId is required in query params.' });
     }
 
     const log = await prisma.emailLog.findFirst({

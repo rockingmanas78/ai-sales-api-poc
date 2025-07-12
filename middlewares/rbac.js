@@ -9,6 +9,10 @@ const permissions = {
   SUPERADMIN: ['*'], // Wildcard - all permissions
   
   ADMIN: [
+    // Tenant management
+    'view_tenant',
+    'manage_tenant',
+
     // User management
     'manage_users',
     'view_users',
@@ -38,6 +42,8 @@ const permissions = {
   ],
   
   MANAGER: [
+    // View tenant profile (but not update)
+    'view_tenant',
     // Email management (managers can handle)
     'manage_emails',
     'view_emails',

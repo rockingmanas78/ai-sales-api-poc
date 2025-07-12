@@ -98,7 +98,7 @@ export const getCampaignById = async (req, res) => {
     const  tenantId  = req.query.tenantId;
 
     if (!tenantId) {
-      return res.status(400).json({ error: 'tenantId is required in body' });
+      return res.status(400).json({ error: 'tenantId is required in query.' });
     }
 
     const campaign = await prisma.emailCampaign.findFirst({
@@ -163,7 +163,7 @@ export const deleteCampaign = async (req, res) => {
     const  tenantId  = req.query.tenantId;
 
     if (!tenantId) {
-      return res.status(400).json({ error: 'tenantId is required in body' });
+      return res.status(400).json({ error: 'tenantId is required in query.' });
     }
 
     const existing = await prisma.emailCampaign.findFirst({
@@ -191,7 +191,7 @@ export const deleteCampaign = async (req, res) => {
 
 // GET /api/campaign-dashboard
 export const getCampaignDashboard = async (req, res) => {
-  const tenantId = req.params;
+  const {tenantId } = req.params;
 
   try {
     // Fetch all campaigns with required relations

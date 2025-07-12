@@ -3,7 +3,9 @@ import jwt from 'jsonwebtoken';
 // Generate Access Token (valid for 1 hour)
 export const generateAuthToken = (user) => {
   return jwt.sign(
-    { id: user.id, role: user.role },
+    { id: user.id,
+      role: user.role,
+    tenantId : user.tenantId},
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -12,7 +14,9 @@ export const generateAuthToken = (user) => {
 // Generate Refresh Token (valid for 7 days)
 export const generateRefreshToken = (user) => {
   return jwt.sign(
-    { id: user.id, role: user.role },
+    { id: user.id,
+      role: user.role,
+      tenantId: user.tenantId },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: '7d' }
   );

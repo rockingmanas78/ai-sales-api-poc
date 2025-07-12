@@ -1,8 +1,11 @@
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
 import { 
   verifyEmailIdentity, 
   getIdentityVerificationAttributes,
   sendEmail as sesSendEmail,
   verifyDomainIdentity,
+  enableDKIMSigning,
 } from "../services/ses.service.js";
 
 // POST /ses/onboard-domain
@@ -10,9 +13,20 @@ export async function onboardDomain(req, res, next) {
   try {
     const { domainName } = req.body;
     if (!domainName) return res.status(400).json({ error: 'Domain name is required' });
+    if (!req.user.tenantId) return res.status(400).json({ error: 'Tenant details is required' });
+
+        // 0. Prevent duplicates
+    const existing = await prisma.domainIdentity.findFirst({
+      where: { domainName }
+    });
+    if (existing) {
+      return res
+        .status(409)
+        .json({ error: `Domain ${domainName} is already onboarded for an account.` });
+    }
 
     // SES: initiate domain verification
-    const token = await verifyDomainIdentity(domainName);
+    const { records, token } = await verifyDomainIdentity(domainName);
 
     // Persist DomainIdentity record
     const domain = await prisma.domainIdentity.create({
@@ -21,21 +35,20 @@ export async function onboardDomain(req, res, next) {
         domainName,
         verificationToken: token,
         verificationStatus: 'Pending',
-        dkimTokens: []
+        dkimTokens: [],
+        dkimRecords: records
       }
     });
 
+    const signing = await enableDKIMSigning(domainName);
+
     return res.json({
-      message: 'Domain verification initiated',
+      message: "Domain onboarding initiated. Add these DNS records:",
       domain,
-      dnsInstruction: {
-        type: 'TXT',
-        name: `_amazonses.${domainName}`,
-        value: token,
-        ttl:   1800
-      }
+      dnsInstruction: records
     });
   } catch (err) {
+    console.log(err);
     next(err);
   }
 }
@@ -49,13 +62,25 @@ export async function onboardEmail(req, res, next) {
 
     // Ensure domain exists & is verified
     const domain = await prisma.domainIdentity.findFirst({
-      where: { id: domainId, tenantId: req.user.tenantId, verificationStatus: 'Success' }
+      where: { id: domainId,
+        tenantId: req.user.tenantId,
+        verificationStatus: 'Success' }
     });
     if (!domain)
       return res.status(400).json({ error: 'Domain not found or not verified' });
 
+    //Check if this email already exists in DB
+    const existing = await prisma.emailIdentity.findUnique({
+      where: { emailAddress }
+    });
+    if (existing) {
+      return res.status(200).json({
+        message: `Email ${emailAddress} is already onboarded.`,
+        email: existing
+      });
+    }
     // SES: initiate email verification
-    await verifyEmailIdentity(emailAddress);
+    await verifyEmailIdentity(emailAddress); //This sends a verification email to the email address.User must click the link in that email to complete verification.
 
     // Persist EmailIdentity
     const email = await prisma.emailIdentity.create({
@@ -89,25 +114,25 @@ export async function checkVerificationStatus(req, res, next) {
     const status = rec.VerificationStatus;
 
     // Update DomainIdentity if matches
-    await prisma.domainIdentity.updateMany({
-      where: { tenantId: req.user.tenantId, domainName: identity },
-      data: {
-        verificationStatus: status,
-        verifiedAt: status === 'Success' ? new Date() : undefined,
-        dkimTokens: rec.DkimAttributes
-          ? Object.values(rec.DkimAttributes).map(d => String(d))
-          : undefined
-      }
-    });
+    // await prisma.domainIdentity.updateMany({
+    //   where: { tenantId: req.user.tenantId, domainName: identity },
+    //   data: {
+    //     verificationStatus: status,
+    //     verifiedAt: status === 'Success' ? new Date() : undefined,
+    //     dkimTokens: rec.DkimAttributes
+    //       ? Object.values(rec.DkimAttributes).map(d => String(d))
+    //       : undefined
+    //   }
+    // });
 
     // Update EmailIdentity if matches
-    await prisma.emailIdentity.updateMany({
-      where: { domain: { tenantId: req.user.tenantId }, emailAddress: identity },
-      data: {
-        verificationStatus: status,
-        verifiedAt: status === 'Success' ? new Date() : undefined
-      }
-    });
+    // await prisma.emailIdentity.updateMany({
+    //   where: { domain: { tenantId: req.user.tenantId }, emailAddress: identity },
+    //   data: {
+    //     verificationStatus: status,
+    //     verifiedAt: status === 'Success' ? new Date() : undefined
+    //   }
+    // });
 
     return res.json({
       identity,
@@ -117,7 +142,7 @@ export async function checkVerificationStatus(req, res, next) {
   } catch (err) {
     next(err);
   }
-}
+};
 
 // GET /ses/identities
 export async function listIdentities(req, res, next) {
@@ -141,7 +166,9 @@ export async function listIdentities(req, res, next) {
 export async function sendTrackedEmail(req, res, next) {
   try {
     const { toEmail, subject, htmlBody, configurationSetName } = req.body;
-    if (!toEmail || !subject || !htmlBody || !configurationSetName)
+    if (!toEmail || !subject || !htmlBody
+      // || !configurationSetName
+    )
       return res.status(400).json({
         error: 'toEmail, subject, htmlBody, and configurationSetName are required'
       });
