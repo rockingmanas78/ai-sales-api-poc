@@ -11,6 +11,13 @@ import {
 
 const router = Router();
 
+router.get('/get-ip', (req, res) => {
+  const clientIp =
+    req.headers['x-forwarded-for'] ||
+    req.connection.remoteAddress ||
+    req.socket.remoteAddress;
+  res.send({ ip: clientIp });
+});
 
 router.post('/signup', signup);
 
