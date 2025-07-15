@@ -8,7 +8,7 @@ const AI_ENDPOINT = 'https://lead-generation-production-d101.up.railway.app/api'
 
 export const searchAndExtract = async (req, res) => {
   try {
-    const { tenantId, prompt, num_results = 6, offset = 0 } = req.body;
+    const { tenantId, prompt, num_results = 1, offset = 0 } = req.body;
 
     if (!tenantId || !prompt) {
       return res.status(400).json({ error: 'tenantId and prompt are required' });
