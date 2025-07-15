@@ -16,9 +16,10 @@ import leadGenRouter from './routes/leadGenJob.route.js';
 import bulkEmailRouter from './routes/bulkEmail.routes.js'
 import { processNextBatch } from './controllers/bulkEmail.controller.js';
 import pricingRoute     from './routes/pricing.route.js'
-import updateSuscriptionRoute from './routes/updateSuscription.route.js'
+import updateSubscriptionRoute from './routes/updateSubscription.route.js'
 //import reportRouter from './routes/report.route.js';
 import dashboardRouter from './routes/dashboard.route.js';
+
 
 
 const app = express();
@@ -60,8 +61,9 @@ app.use("/api", bulkEmailRouter);
 //app.use('/reports', reportRouter);
 app.use('/api', bodyParser.raw({ type: '*/*' }), snsRoutes);
 app.use("/api/plan", pricingRoute);
-app.use("/api/suscription", updateSuscriptionRoute);
+app.use("/api/subscription", updateSubscriptionRoute);
 app.use('/api', dashboardRouter);
+
 
 // Global error handler
 app.use((err, req, res, next) => {

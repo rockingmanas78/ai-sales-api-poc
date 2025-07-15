@@ -1,9 +1,12 @@
 import { PrismaClient } from '@prisma/client';
 import { addMonths } from 'date-fns';
-// import payments from '../../libs/payments/index.js'; // Uncomment when available
+import dotenv from 'dotenv';
+import { initiatePhonePePayment, verifyPhonePeStatus } from '../services/payment.service.js';
 
+dotenv.config();
 const prisma = new PrismaClient();
 
+// Update subscription + Create PhonePe order
 export const updateSubscription = async (req, res) => {
   const { tenantId, versionId } = req.body;
 
@@ -35,7 +38,7 @@ export const updateSubscription = async (req, res) => {
     }
 
     const newStart = new Date();
-    const newEnd = addMonths(newStart, 1);
+    const newEnd = addMonths(newStart, 1);//--
 
     // 3. Update tenant's plan code
     await prisma.tenant.update({
@@ -72,23 +75,71 @@ export const updateSubscription = async (req, res) => {
       });
     }
 
-    // 5. Optional payment integration
+    // 5. PhonePe payment integration
     let paymentInfo = null;
-    // if (planVersion.prices.length > 0) {
-    //   const gwResp = await payments.createGatewaySubscription(
-    //     planVersion.prices[0].externalPriceId,
-    //     tenant
-    //   );
-    //   paymentInfo = { clientSecret: gwResp.clientSecret };
-    // }
+
+    if (planVersion.prices.length > 0) {
+      const amount = planVersion.prices[0].price; // amount in paisa
+
+      const { merchantTransactionId, redirectUrl } = await initiatePhonePePayment(
+        tenantId,
+        amount
+      );
+
+      // Save transaction
+      await prisma.paymentTransaction.create({
+        data: {
+          tenantId,
+          subscriptionId: subscription.id,
+          phonepeOrderId: merchantTransactionId,
+          amount,
+          status: 'INITIATED'
+        }
+      });
+
+      paymentInfo = {
+        orderId: merchantTransactionId,
+        redirectUrl
+      };
+    }
 
     return res.status(200).json({
       message: 'Subscription updated successfully',
       subscription,
       paymentInfo
     });
+
   } catch (error) {
     console.error('Error updating subscription:', error);
     return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Verify PhonePe transaction status
+export const verifyPhonePePaymentStatus = async (req, res) => {
+  const { orderId } = req.params;
+
+  if (!orderId) {
+    return res.status(400).json({ message: 'Order ID is required' });
+  }
+
+  try {
+    const status = await verifyPhonePeStatus(orderId);
+
+    // Update DB
+    await prisma.paymentTransaction.updateMany({
+      where: { phonepeOrderId: orderId },
+      data: { status }
+    });
+
+    return res.status(200).json({
+      message: 'Payment status fetched',
+      orderId,
+      status
+    });
+
+  } catch (error) {
+    console.error('PhonePe verify error:', error?.response?.data || error.message);
+    return res.status(500).json({ message: 'Error verifying PhonePe order' });
   }
 };

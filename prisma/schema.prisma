@@ -46,7 +46,7 @@ model PriceId {
   id              String      @id @default(uuid())
   planVersionId   String
   gateway         String
-  price           String
+  price           Int
   externalPriceId String
   PlanVersion     PlanVersion @relation(fields: [planVersionId], references: [id])
 }
@@ -278,10 +278,22 @@ model LeadGenerationJob {
   @@index([tenantId, status])
 }
 
+model PaymentTransaction {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  subscriptionId     String
+  phonepeOrderId     String
+  amount             Int
+  status             String   @default("INITIATED")
+  createdAt          DateTime @default(now())
+}
+
+
 enum PlanType {
   FREE
+  STARTER
+  GROWTH
   PRO
-  ENTERPRISE
 }
 
 enum UserRole {
