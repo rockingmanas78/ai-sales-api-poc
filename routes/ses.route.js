@@ -9,6 +9,8 @@ router.post('/onboard-domain', verifyToken(), authorize('manage_emails'), onboar
 router.post('/onboard-email', verifyToken(), authorize('manage_emails'), onboardEmail);
 router.post('/verify-status', verifyToken(), authorize('manage_emails'), checkVerificationStatus);
 
+// Create find domains by tenant id
+
 // NEW: list all onboarded domains & their emails
 router.get('/identities', verifyToken(), authorize('view_emails'), listIdentities);
 

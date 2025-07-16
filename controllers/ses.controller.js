@@ -114,25 +114,25 @@ export async function checkVerificationStatus(req, res, next) {
     const status = rec.VerificationStatus;
 
     // Update DomainIdentity if matches
-    // await prisma.domainIdentity.updateMany({
-    //   where: { tenantId: req.user.tenantId, domainName: identity },
-    //   data: {
-    //     verificationStatus: status,
-    //     verifiedAt: status === 'Success' ? new Date() : undefined,
-    //     dkimTokens: rec.DkimAttributes
-    //       ? Object.values(rec.DkimAttributes).map(d => String(d))
-    //       : undefined
-    //   }
-    // });
+    await prisma.domainIdentity.updateMany({
+      where: { tenantId: req.user.tenantId, domainName: identity },
+      data: {
+        verificationStatus: status,
+        verifiedAt: status === 'Success' ? new Date() : undefined,
+        dkimTokens: rec.DkimAttributes
+          ? Object.values(rec.DkimAttributes).map(d => String(d))
+          : undefined
+      }
+    });
 
     // Update EmailIdentity if matches
-    // await prisma.emailIdentity.updateMany({
-    //   where: { domain: { tenantId: req.user.tenantId }, emailAddress: identity },
-    //   data: {
-    //     verificationStatus: status,
-    //     verifiedAt: status === 'Success' ? new Date() : undefined
-    //   }
-    // });
+    await prisma.emailIdentity.updateMany({
+      where: { domain: { tenantId: req.user.tenantId }, emailAddress: identity },
+      data: {
+        verificationStatus: status,
+        verifiedAt: status === 'Success' ? new Date() : undefined
+      }
+    });
 
     return res.json({
       identity,
@@ -165,7 +165,7 @@ export async function listIdentities(req, res, next) {
 // POST /ses/send-email
 export async function sendTrackedEmail(req, res, next) {
   try {
-    const { toEmail, subject, htmlBody, configurationSetName } = req.body;
+    const { fromEmail, toEmail, subject, htmlBody, configurationSetName } = req.body;
     if (!toEmail || !subject || !htmlBody
       // || !configurationSetName
     )
@@ -174,6 +174,7 @@ export async function sendTrackedEmail(req, res, next) {
       });
 
     const result = await sesSendEmail({
+      fromEmail,
       toEmail,
       subject,
       htmlBody,

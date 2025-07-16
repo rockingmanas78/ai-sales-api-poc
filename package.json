@@ -26,6 +26,7 @@
     "google-auth-library": "^9.15.1",
     "ipinfo": "^1.5.2",
     "jsonwebtoken": "^9.0.2",
+    "mustache": "^4.2.0",
     "nodemailer": "^7.0.3"
   },
   "devDependencies": {

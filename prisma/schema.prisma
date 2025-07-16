@@ -281,7 +281,8 @@ model LeadGenerationJob {
 enum PlanType {
   FREE
   PRO
-  ENTERPRISE
+  GROWTH
+  STARTER
 }
 
 enum UserRole {
