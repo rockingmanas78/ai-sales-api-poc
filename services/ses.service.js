@@ -23,22 +23,23 @@ export async function verifyDomainIdentity(domainName) {
   const res = await ses.send(command);
   const dkimCommands = new VerifyDomainDkimCommand({ Domain: domainName });
   const { DkimTokens } = await ses.send(dkimCommands);
+
   let cnameRecords = DkimTokens.map(token => ({
-    Name: `${token}._domainkey.${domainName}`,
+    Name: `${token}._domainkey`,
     type: "CNAME",
     value: `${token}.dkim.amazonses.com`,
-    ttl: 1800
+    ttl: 14400
   }));
 
   cnameRecords.push({
-    Name: `_dmarc.${domainName}`,
+    Name: `_dmarc`,
     type: "TXT",
     value: "v=DMARC1; p=none;",
     ttl: 1800
   })
 
   cnameRecords.push({
-      name: domainName,
+      name: '@',
       type: "TXT",
       value: "v=spf1 include:amazonses.com ~all",
       ttl: 1800,
@@ -46,7 +47,7 @@ export async function verifyDomainIdentity(domainName) {
 
   cnameRecords.push({
     type: 'TXT',
-    name: `_amazonses.${domainName}`,
+    name: `_amazonses`,
     value: res.VerificationToken,
     ttl: 1800
   })
@@ -77,15 +78,35 @@ export async function getIdentityVerificationAttributes(identities) {
   return res.VerificationAttributes;
 }
 
-export async function sendEmail({ toEmail, subject, htmlBody, configurationSetName }) {
+// export async function sendEmail({ toEmail, subject, htmlBody, configurationSetName }) {
+//   const cmd = new SendEmailCommand({
+//     Destination: { ToAddresses: [toEmail] },
+//     Message: {
+//       Subject: { Data: subject, Charset: 'UTF-8' },
+//       Body:    { Html: { Data: htmlBody, Charset: 'UTF-8' } }
+//     },
+//     Source: process.env.SES_SOURCE_EMAIL,
+//     //ConfigurationSetName: configurationSetName
+//   });
+//   return await ses.send(cmd);
+// }
+
+export async function sendEmail({
+  fromEmail,
+  toEmail,
+  subject,
+  htmlBody,
+  configurationSetName
+}) {
   const cmd = new SendEmailCommand({
+    Source: fromEmail,                       // ← now dynamic
     Destination: { ToAddresses: [toEmail] },
     Message: {
-      Subject: { Data: subject, Charset: 'UTF-8' },
-      Body:    { Html: { Data: htmlBody, Charset: 'UTF-8' } }
+      Subject: { Data: subject, Charset: "UTF-8" },
+      Body:    { Html:   { Data: htmlBody, Charset: "UTF-8" } }
     },
-    Source: process.env.SES_SOURCE_EMAIL,
-    //ConfigurationSetName: configurationSetName
+    ...(configurationSetName && { ConfigurationSetName: configurationSetName })
   });
+
   return await ses.send(cmd);
 }

@@ -38,7 +38,6 @@ export const createTenant = async (req, res) => {
 
     const planCode = planVersionRecord.Plan.code;
 
-
     // Check for existing user
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
