@@ -28,7 +28,8 @@
     "jsonwebtoken": "^9.0.2",
     "mustache": "^4.2.0",
     "nodemailer": "^7.0.3",
-    "pg-sdk-node": "^2.0.2"
+    "pg-sdk-node": "^2.0.2",
+    "mustache": "^4.2.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.3",
