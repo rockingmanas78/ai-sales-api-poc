@@ -52,32 +52,34 @@ model PriceId {
 }
 
 model Tenant {
-  id             String              @id @default(uuid())
-  name           String
-  plan           PlanType            @default(FREE)
-  createdAt      DateTime            @default(now())
-  countryCode    String?
-  zone           ZoneCode            @default(IN)
-  deletedAt      DateTime?
-  bulkEmailJobs  BulkEmailJob[]
-  DomainIdentity DomainIdentity[]
-  campaigns      EmailCampaign[]
-  emailLogs      EmailLog[]
-  templates      EmailTemplate[]
-  leads          Lead[]
-  jobs           LeadGenerationJob[]
-  users          User[]
+  id                 String               @id @default(uuid())
+  name               String
+  plan               PlanType             @default(FREE)
+  createdAt          DateTime             @default(now())
+  countryCode        String?
+  zone               ZoneCode             @default(IN)
+  deletedAt          DateTime?
+  bulkEmailJobs      BulkEmailJob[]
+  DomainIdentity     DomainIdentity[]
+  campaigns          EmailCampaign[]
+  emailLogs          EmailLog[]
+  templates          EmailTemplate[]
+  leads              Lead[]
+  jobs               LeadGenerationJob[]
+  PaymentTransaction PaymentTransaction[]
+  users              User[]
 }
 
 model Subscription {
-  id            String   @id @default(uuid())
-  tenantId      String
-  planVersionId String
-  zone          ZoneCode
-  status        String
-  currentStart  DateTime
-  currentEnd    DateTime
-  brokerId      String?
+  id                 String               @id @default(uuid())
+  tenantId           String
+  planVersionId      String
+  zone               ZoneCode
+  status             String
+  currentStart       DateTime
+  currentEnd         DateTime
+  brokerId           String?
+  PaymentTransaction PaymentTransaction[]
 }
 
 model UsageEvent {
@@ -135,6 +137,7 @@ model Lead {
   createdAt         DateTime           @default(now())
   deletedAt         DateTime?
   contactAddress    String[]
+  source            lead_source        @default(AI_GENERATED)
   bulkEmailJobLeads BulkEmailJobLead[]
   campaignLeads     CampaignLead[]
   emailLogs         EmailLog[]
@@ -279,21 +282,22 @@ model LeadGenerationJob {
 }
 
 model PaymentTransaction {
-  id                 String   @id @default(uuid())
-  tenantId           String
-  subscriptionId     String
-  phonepeOrderId     String
-  amount             Int
-  status             String   @default("INITIATED")
-  createdAt          DateTime @default(now())
+  id             String       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  tenantId       String
+  subscriptionId String
+  phonepeOrderId String
+  amount         Int
+  status         String       @default("INITIATED")
+  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+  Subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_paymenttransaction_subscription")
+  Tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_paymenttransaction_tenant")
 }
-
 
 enum PlanType {
   FREE
-  STARTER
-  GROWTH
   PRO
+  GROWTH
+  STARTER
 }
 
 enum UserRole {
@@ -365,4 +369,10 @@ enum Experiment {
   A
   B
   C
+}
+
+enum lead_source {
+  AI_GENERATED
+  CSV_UPLOAD
+  MANUAL_ENTRY
 }

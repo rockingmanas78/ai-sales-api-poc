@@ -19,6 +19,7 @@ import pricingRoute     from './routes/pricing.route.js'
 import updateSubscriptionRoute from './routes/updateSubscription.route.js'
 //import reportRouter from './routes/report.route.js';
 import dashboardRouter from './routes/dashboard.route.js';
+import analyticsRouter from './routes/analytics.route.js';
 
 
 
@@ -63,6 +64,7 @@ app.use('/api', bodyParser.raw({ type: '*/*' }), snsRoutes);
 app.use("/api/plan", pricingRoute);
 app.use("/api/subscription", updateSubscriptionRoute);
 app.use('/api', dashboardRouter);
+app.use('/api/analytics', analyticsRouter);
 
 
 // Global error handler
