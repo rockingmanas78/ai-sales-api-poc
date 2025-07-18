@@ -46,38 +46,40 @@ model PriceId {
   id              String      @id @default(uuid())
   planVersionId   String
   gateway         String
-  price           String
+  price           Int
   externalPriceId String
   PlanVersion     PlanVersion @relation(fields: [planVersionId], references: [id])
 }
 
 model Tenant {
-  id             String              @id @default(uuid())
-  name           String
-  plan           PlanType            @default(FREE)
-  createdAt      DateTime            @default(now())
-  countryCode    String?
-  zone           ZoneCode            @default(IN)
-  deletedAt      DateTime?
-  bulkEmailJobs  BulkEmailJob[]
-  DomainIdentity DomainIdentity[]
-  campaigns      EmailCampaign[]
-  emailLogs      EmailLog[]
-  templates      EmailTemplate[]
-  leads          Lead[]
-  jobs           LeadGenerationJob[]
-  users          User[]
+  id                 String               @id @default(uuid())
+  name               String
+  plan               PlanType             @default(FREE)
+  createdAt          DateTime             @default(now())
+  countryCode        String?
+  zone               ZoneCode             @default(IN)
+  deletedAt          DateTime?
+  bulkEmailJobs      BulkEmailJob[]
+  DomainIdentity     DomainIdentity[]
+  campaigns          EmailCampaign[]
+  emailLogs          EmailLog[]
+  templates          EmailTemplate[]
+  leads              Lead[]
+  jobs               LeadGenerationJob[]
+  PaymentTransaction PaymentTransaction[]
+  users              User[]
 }
 
 model Subscription {
-  id            String   @id @default(uuid())
-  tenantId      String
-  planVersionId String
-  zone          ZoneCode
-  status        String
-  currentStart  DateTime
-  currentEnd    DateTime
-  brokerId      String?
+  id                 String               @id @default(uuid())
+  tenantId           String
+  planVersionId      String
+  zone               ZoneCode
+  status             String
+  currentStart       DateTime
+  currentEnd         DateTime
+  brokerId           String?
+  PaymentTransaction PaymentTransaction[]
 }
 
 model UsageEvent {
@@ -135,6 +137,7 @@ model Lead {
   createdAt         DateTime           @default(now())
   deletedAt         DateTime?
   contactAddress    String[]
+  source            lead_source        @default(AI_GENERATED)
   bulkEmailJobLeads BulkEmailJobLead[]
   campaignLeads     CampaignLead[]
   emailLogs         EmailLog[]
@@ -200,6 +203,9 @@ model EmailCampaign {
   scheduledAt   DateTime?
   createdAt     DateTime       @default(now())
   status        CampaignStatus @default(DRAFT)
+  name          String
+  description   String?
+  campaign_type CampaignType
   bulkEmailJobs BulkEmailJob[]
   campaignLeads CampaignLead[]
   template      EmailTemplate  @relation(fields: [templateId], references: [id])
@@ -278,6 +284,18 @@ model LeadGenerationJob {
   @@index([tenantId, status])
 }
 
+model PaymentTransaction {
+  id             String       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  tenantId       String
+  subscriptionId String
+  phonepeOrderId String
+  amount         Int
+  status         String       @default("INITIATED")
+  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+  Subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_paymenttransaction_subscription")
+  Tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_paymenttransaction_tenant")
+}
+
 enum PlanType {
   FREE
   PRO
@@ -354,4 +372,17 @@ enum Experiment {
   A
   B
   C
+}
+
+enum CampaignType {
+  COLD_OUTREACH
+  FOLLOW_UP_SEQUENCE
+  LEAD_NURTURING
+  RE_ENGAGEMENT
+}
+
+enum lead_source {
+  AI_GENERATED
+  CSV_UPLOAD
+  MANUAL_ENTRY
 }

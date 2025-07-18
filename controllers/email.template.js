@@ -1,29 +1,89 @@
 import { PrismaClient } from '@prisma/client';
+import { ALLOWED_VARS } from '../constants/template.constants.js';
 const prisma = new PrismaClient();
 
 
 // Create a new email template
-export const createTemplate = async (req, res) => {
+// export const createTemplate = async (req, res) => {
   
+//   try {
+//     const { tenantId, name, subject, body, from, to, variable } = req.body;
+
+//     if (!tenantId || !name || !subject || !body || !from || !to) {
+//       return res.status(400).json({ message: "Required fields missing" });
+//     }
+
+//     // Validate tenantId exists and is not soft-deleted
+//     const tenantExists = await prisma.tenant.findFirst({
+//       where: {
+//         id: tenantId,
+//         deletedAt: null,
+//       },
+//     });
+
+//     if (!tenantExists) {
+//       return res.status(404).json({ error: "Tenant not found" });
+//     }
+
+//     const newTemplate = await prisma.emailTemplate.create({
+//       data: {
+//         tenantId,
+//         name,
+//         subject,
+//         body,
+//         from,
+//         to,
+//         variable: variable
+//           ? {
+//               create: variable.map(v => ({
+//                 key: v.key,
+//                 defaultValue: v.defaultValue,
+//               })),
+//             }
+//           : undefined,
+//       },
+//       include: { variable: true },
+//     });
+
+//     res.status(201).json(newTemplate);
+//   } catch (error) {
+//     console.error("Error creating template:", error);
+//     res.status(500).json({ error: "Internal server error" });
+//   }
+// };
+export const createTemplate = async (req, res) => {
   try {
     const { tenantId, name, subject, body, from, to, variable } = req.body;
 
+    // 1️⃣ Required‐fields check
     if (!tenantId || !name || !subject || !body || !from || !to) {
       return res.status(400).json({ message: "Required fields missing" });
     }
 
-    // Validate tenantId exists and is not soft-deleted
+    // 2️⃣ Tenant existence check
     const tenantExists = await prisma.tenant.findFirst({
-      where: {
-        id: tenantId,
-        deletedAt: null,
-      },
+      where: { id: tenantId, deletedAt: null }
     });
-
     if (!tenantExists) {
       return res.status(404).json({ error: "Tenant not found" });
     }
 
+    // 3️⃣ Validate variable keys, if provided
+    if (variable) {
+      const keys = variable.map(v => v.key);
+      const invalid = keys.filter(k => !ALLOWED_VARS.has(k));
+      if (invalid.length) {
+        return res.status(400).json({
+          error: "Unsupported template variables",
+          detail: {
+            allowed: [...ALLOWED_VARS],
+            invalid
+          }
+        });
+      }
+    }
+
+    // 4️⃣ Create the template
     const newTemplate = await prisma.emailTemplate.create({
       data: {
         tenantId,
@@ -35,22 +95,21 @@ export const createTemplate = async (req, res) => {
         variable: variable
           ? {
               create: variable.map(v => ({
-                key: v.key,
-                defaultValue: v.defaultValue,
-              })),
+                key         : v.key,
+                defaultValue: v.defaultValue
+              }))
             }
-          : undefined,
+          : undefined
       },
-      include: { variable: true },
+      include: { variable: true }
     });
 
-    res.status(201).json(newTemplate);
+    return res.status(201).json(newTemplate);
   } catch (error) {
     console.error("Error creating template:", error);
-    res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
-
 
 // Get all templates for a tenant (tenantId from req.body)
 export const getTenantTemplates = async (req, res) => {

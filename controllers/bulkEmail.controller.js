@@ -1,49 +1,133 @@
 // src/bulkEmailService.js
 import { PrismaClient, EmailStatus } from "@prisma/client";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+import mustache from 'mustache';
+import { sendEmail } from "../services/ses.service.js";
 
 export const prisma = new PrismaClient();
 export const sesClient = new SESClient({ region: process.env.AWS_REGION });
 
 // how many windows per hour you split the rate into
 const WINDOWS_PER_HOUR = 6;   // e.g. 6 × 10-minute windows
+const MAX_ATTEMPTS = Number(process.env.MAX_EMAIL_ATTEMPTS || 3);
+const WINDOW_MS = 60000;
 
 /**
  * POST /api/bulk-send
  */
+// export async function createBulkEmailJob(req, res, next) {
+//   try {
+//     const { tenantId, templateId, leadIds, rateLimit } = req.body;
+
+//     // 1. validate
+//     if (!tenantId || !templateId || !Array.isArray(leadIds) || !rateLimit) {
+//       return res.status(400).json({ error: "tenantId, templateId, leadIds[], rateLimit required" });
+//     }
+
+//     // 2) verify tenant & template
+//     const [tenant, template, leads] = await Promise.all([
+//       prisma.tenant.findUnique({ where: { id: tenantId, deletedAt: null } }),
+//       prisma.emailTemplate.findFirst({ where: { id: templateId, tenantId , deletedAt: null } }),
+//       prisma.lead.findMany({ where: { id: { in: leadIds }, tenantId, deletedAt: null } })
+//     ]);
+//     if (!tenant)   return res.status(404).json({ error: "Tenant not found" });
+//     if (!template) return res.status(404).json({ error: "Template not found" });
+//     if (leads.length !== leadIds.length)
+//       return res.status(400).json({ error: "Some leads invalid or belong to another tenant" });
+
+//     // // 3) create job + leads
+//     // const job = await prisma.bulkEmailJob.create({
+//     //   data: {
+//     //     tenantId,
+//     //     templateId,
+//     //     rateLimit,
+//     //     nextProcessTime: new Date(),      // start immediately
+//     //     jobLeads: { create: leadIds.map(id => ({ leadId: id })) },
+//     //   },
+//     //   include: { jobLeads: true },
+//     // });
+
+//     // 4. create job + junction rows in ONE tx
+//     const job = await prisma.$transaction(async tx => {
+//       const j = await tx.bulkEmailJob.create({
+//         data: {
+//           tenantId,
+//           templateId,
+//           rateLimit,
+//           total: leadIds.length,
+//           nextProcessTime: new Date(),          // start now
+//           jobLeads: { create: leadIds.map(id => ({ leadId: id })) }
+//         },
+//         include: { jobLeads: true }
+//       });
+//       // optional: mark parent campaign ACTIVE if provided
+//       return j;
+//     });
+
+//     res.status(201).json(job);
+//   } catch (err) {
+//     next(err);
+//   }
+// }
+
 export async function createBulkEmailJob(req, res, next) {
   try {
-    const { tenantId, templateId, leadIds, rateLimit } = req.body;
+    const { tenantId, templateId, leadIds, rateLimit, campaignId } = req.body;
+
+    // 1. Basic validation
     if (!tenantId || !templateId || !Array.isArray(leadIds) || !rateLimit) {
-      return res.status(400).json({ error: "tenantId, templateId, leadIds[], rateLimit required" });
+      return res
+        .status(400)
+        .json({ error: "tenantId, templateId, leadIds[], rateLimit required" });
     }
 
-    // 1) verify tenant & template
-    const [tenant, template] = await Promise.all([
-      prisma.tenant.findFirst({ where: { id: tenantId, deletedAt: null } }),
-      prisma.emailTemplate.findFirst({ where: { id: templateId, tenantId, deletedAt: null } })
+    // 2. Verify tenant, template, and leads
+    const [tenant, template, leads] = await Promise.all([
+      prisma.tenant.findUnique({ where: { id: tenantId, deletedAt: null } }),
+      prisma.emailTemplate.findFirst({ where: { id: templateId, tenantId, deletedAt: null } }),
+      prisma.lead.findMany({
+        where: { id: { in: leadIds }, tenantId, deletedAt: null },
+      }),
     ]);
-    if (!tenant)   return res.status(404).json({ error: "Tenant not found" });
+    if (!tenant) return res.status(404).json({ error: "Tenant not found" });
     if (!template) return res.status(404).json({ error: "Template not found" });
-
-    // 2) verify leads
-    const leads = await prisma.lead.findMany({
-      where: { id: { in: leadIds }, tenantId, deletedAt: null }
-    });
     if (leads.length !== leadIds.length) {
-      return res.status(400).json({ error: "Some leads missing / invalid", found: leads.length });
+      return res.status(400).json({
+        error: "Some leads invalid or belong to another tenant",
+      });
     }
 
-    // 3) create job + leads
-    const job = await prisma.bulkEmailJob.create({
-      data: {
-        tenantId,
-        templateId,
-        rateLimit,
-        nextProcessTime: new Date(),      // start immediately
-        jobLeads: { create: leadIds.map(id => ({ leadId: id })) },
-      },
-      include: { jobLeads: true },
+    // 3. Optionally create a campaign if none was supplied
+    let campaignIdToUse = campaignId;
+    if (!campaignId) {
+      const campaign = await prisma.emailCampaign.create({
+        data: {
+          tenantId,
+          templateId,
+          status: "ACTIVE",       // or DRAFT if you prefer
+          scheduledAt: new Date(),// or null if you schedule later
+        },
+      });
+      campaignIdToUse = campaign.id;
+    }
+
+    // 4. Create the BulkEmailJob, linking the campaignId
+    const job = await prisma.$transaction(async (tx) => {
+      const j = await tx.bulkEmailJob.create({
+        data: {
+          tenantId,
+          templateId,
+          campaignId: campaignIdToUse,  // ← attach here
+          rateLimit,
+          total: leadIds.length,
+          nextProcessTime: new Date(),
+          jobLeads: {
+            create: leadIds.map((id) => ({ leadId: id })),
+          },
+        },
+        include: { jobLeads: true },
+      });
+      return j;
     });
 
     res.status(201).json(job);
@@ -133,87 +217,186 @@ export async function resumeBulkEmailJob(req, res, next) {
  * process a batch (rateLimit / WINDOWS_PER_HOUR leads), then schedule nextProcessTime.
  */
 export async function processNextBatch() {
+  console.log("Starting Next batch");
   const now = new Date();
+
+  // ① Grab all jobs that are due, *including* their template
   const dueJobs = await prisma.bulkEmailJob.findMany({
     where: {
-      status: { in: ["QUEUED", "PROCESSING"] },
+      status: { in: ['QUEUED', 'PROCESSING'] },
       nextProcessTime: { lte: now }
-    }
+    },
+    include: { template: true }       // ← critical
   });
 
+  console.log(dueJobs);
+
   for (const job of dueJobs) {
-    // 1) mark processing
+    // 1️⃣ mark PROCESSING
     await prisma.bulkEmailJob.update({
       where: { id: job.id },
-      data: { status: "PROCESSING" }
+      data: { status: 'PROCESSING', lastProcessedAt: now }
     });
 
-    // 2) compute batch size and pull leads
+    // 2️⃣ pull next leads
     const batchSize = Math.ceil(job.rateLimit / WINDOWS_PER_HOUR);
     const leadsToProcess = await prisma.bulkEmailJobLead.findMany({
-      where: { jobId: job.id, status: "QUEUED" },
+      where: { jobId: job.id, status: 'QUEUED' },
       include: { lead: true },
       take: batchSize
     });
-
-    // 3) send each email
+    console.log(leadsToProcess);
+    // 3️⃣ send each lead
     for (const jl of leadsToProcess) {
       const { lead } = jl;
-      try {
-        // simple variable replace
-        let html = job.template.bodyHtml
-          .replace(/\{\{name\}\}/g, lead.contactName)
-          .replace(/\{\{company\}\}/g, lead.companyName);
-        const cmd = new SendEmailCommand({
-          Destination: { ToAddresses: [lead.contactEmail] },
-          Message: {
-            Subject: { Charset: "UTF-8", Data: job.template.subject },
-            Body: { Html: { Charset: "UTF-8", Data: html } }
-          },
-          Source: job.template.from
-        });
-        await sesClient.send(cmd);
+      const vars = {
+        name   : lead.contactName ?? '',
+        company: lead.companyName ?? '',
+        email  : (lead.contactEmail ?? [])[0] ?? '',
+        ...lead
+      };
 
-        // success→ update status
+      const renderedSubject = mustache.render(job.template.subject, vars);
+      const renderedHtml    = mustache.render(job.template.body,    vars);
+      const toEmail         = vars.email;
+
+      try {
+        await sendEmail({
+          fromEmail: job.template.from,
+          toEmail,
+          subject : renderedSubject,
+          htmlBody: renderedHtml
+        });
+
+        // success
         await prisma.bulkEmailJobLead.update({
           where: { id: jl.id },
-          data: { status: "SENT", sentAt: new Date(), attempts: { increment: 1 } }
+          data : {
+            status  : 'SENT',
+            sentAt  : new Date(),
+            attempts: { increment: 1 }
+          }
         });
         await prisma.emailLog.create({
           data: {
-            tenantId: job.tenantId,
+            tenantId  : job.tenantId,
             campaignId: job.campaignId,
-            leadId: lead.id,
-            status: "SENT",
-            sentAt: new Date()
+            leadId    : lead.id,
+            status    : 'SENT',
+            sentAt    : new Date()
           }
         });
       } catch (err) {
-        // failure→ increment attempts, mark FAILED
+        console.error(`SES error (${toEmail})`, err);
+
+        const updatedLead = await prisma.bulkEmailJobLead.update({
+          where : { id: jl.id },
+          data  : { attempts: { increment: 1 } },
+          select: { attempts: true }
+        });
+
+        console.log(updatedLead);
+
+        const retry = updatedLead.attempts < MAX_ATTEMPTS;
+
         await prisma.bulkEmailJobLead.update({
           where: { id: jl.id },
-          data: { status: "FAILED", attempts: { increment: 1 } }
+          data : { status: retry ? 'QUEUED' : 'FAILED' }
+        });
+        await prisma.emailLog.create({
+          data: {
+            tenantId  : job.tenantId,
+            campaignId: job.campaignId,
+            leadId    : lead.id,
+            status    : retry ? 'QUEUED' : 'FAILED'
+          }
         });
       }
     }
 
-    // 4) schedule next run: push job back into QUEUED with updated nextProcessTime
-    const next = new Date();
-    next.setMinutes(next.getMinutes() + Math.floor(60 / WINDOWS_PER_HOUR));
-    const sentCount = await prisma.bulkEmailJobLead.count({
-      where: { jobId: job.id, status: "SENT" }
+    // 4️⃣ figure out what’s left & schedule next window
+    const stillQueued = await prisma.bulkEmailJobLead.count({
+      where: { jobId: job.id, status: 'QUEUED' }
     });
+    const processed   = job.total - stillQueued;
 
     await prisma.bulkEmailJob.update({
       where: { id: job.id },
-      data: {
-        status: leadsToProcess.length === 0 ? "COMPLETED" : "QUEUED",
-        progress: sentCount,
-        nextProcessTime: next
+      data : {
+        progress        : processed,
+        status          : stillQueued ? 'QUEUED' : 'COMPLETED',
+        nextProcessTime : stillQueued ? new Date(now.getTime() + WINDOW_MS) : null,
+        completedAt     : stillQueued ? null : new Date()
       }
     });
+
+    if (job.campaignId) {
+      await prisma.emailCampaign.update({
+        where: { id: job.campaignId },
+        data : { status: stillQueued ? 'ACTIVE' : 'COMPLETED' }
+      });
+    }
   }
 }
+
+    // 3) send each email
+//     for (const jl of leadsToProcess) {
+//       const { lead } = jl;
+//       try {
+//         // simple variable replace
+//         let html = job.template.body
+//           .replace(/\{\{name\}\}/g, lead.contactName)
+//           .replace(/\{\{company\}\}/g, lead.companyName);
+//         const cmd = new SendEmailCommand({
+//           Destination: { ToAddresses: [lead.contactEmail] },
+//           Message: {
+//             Subject: { Charset: "UTF-8", Data: job.template.subject },
+//             Body: { Html: { Charset: "UTF-8", Data: html } }
+//           },
+//           Source: job.template.from
+//         });
+//         await sesClient.send(cmd);
+
+//         // success→ update status
+//         await prisma.bulkEmailJobLead.update({
+//           where: { id: jl.id },
+//           data: { status: "SENT", sentAt: new Date(), attempts: { increment: 1 } }
+//         });
+//         await prisma.emailLog.create({
+//           data: {
+//             tenantId: job.tenantId,
+//             campaignId: job.campaignId,
+//             leadId: lead.id,
+//             status: "SENT",
+//             sentAt: new Date()
+//           }
+//         });
+//       } catch (err) {
+//         // failure→ increment attempts, mark FAILED
+//         await prisma.bulkEmailJobLead.update({
+//           where: { id: jl.id },
+//           data: { status: "FAILED", attempts: { increment: 1 } }
+//         });
+//       }
+//     }
+
+//     // 4) schedule next run: push job back into QUEUED with updated nextProcessTime
+//     const next = new Date();
+//     next.setMinutes(next.getMinutes() + Math.floor(60 / WINDOWS_PER_HOUR));
+//     const sentCount = await prisma.bulkEmailJobLead.count({
+//       where: { jobId: job.id, status: "SENT" }
+//     });
+
+//     await prisma.bulkEmailJob.update({
+//       where: { id: job.id },
+//       data: {
+//         status: leadsToProcess.length === 0 ? "COMPLETED" : "QUEUED",
+//         progress: sentCount,
+//         nextProcessTime: next
+//       }
+//     });
+//   }
+// }
 
 
 
