@@ -50,6 +50,29 @@ export const updateSubscription = async (req, res) => {
     let amount = 0;
     const requiresPayment = planVersion.basePriceCents > 0;
 
+    // 3. Update tenant's plan code
+    const planCode = planVersion?.Plan?.code; // e.g., "STARTER"
+
+    console.log(PlanType);
+
+    // Make sure planCode is a valid value
+    if (!planCode || typeof planCode !== 'string' || !Object.values(PlanType).includes(planCode)) {
+      console.log(`Invalid Plan Code ${planCode} `);
+      return res.status(500).json({ message: 'Invalid Plan Code' });
+    }
+
+    try {
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+          plan: planCode, // ✅ Use enum mapping
+        },
+      });
+    } catch (err) {
+      console.error('Error updating tenant plan:', err);
+      return res.status(500).json({ message: 'Failed to update tenant plan' });
+    }
+
     // 3. Initiate PhonePe payment if required (moved up to happen before DB updates)
     if (requiresPayment) {
       if (typeof planVersion.basePriceCents !== 'number' || planVersion.basePriceCents < 0) {
@@ -191,8 +214,6 @@ export const verifyPhonePePaymentStatus = async (req, res) => {
     }
 
     const state = status.state;
-
-    // console.log(status);
 
     if (!status || typeof status !== 'object') {
       return res.status(502).json({ message: 'Invalid response from PhonePe' });
