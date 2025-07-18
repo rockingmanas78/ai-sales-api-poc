@@ -1,71 +1,89 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 const prisma = new PrismaClient();
+const { CampaignType } = Prisma;
 
 // Create Campaign
 export const createCampaign = async (req, res) => {
   try {
-    const { tenantId, templateId, scheduledAt } = req.body;
+    // 1) Log what you actually got so you can debug
+    console.log('createCampaign payload:', req.body);
 
-    if (!tenantId || !templateId) {
-      return res.status(400).json({ error: 'tenantId and templateId are required' });
+    // 2) Pull everything out; note we don’t destructure campaignType yet
+    const {
+      tenantId,
+      templateId,
+      scheduledAt,
+      name,
+      description,   // optional
+      // campaign_type   // <-- we’ll pull this manually below
+    } = req.body;
+
+    // 3) Try both keys: campaignType or type
+    const campaignTypeValue = req.body.campaign_type ?? req.body.type;
+
+    // 4) Validate your required fields
+    if (!tenantId || !templateId || !name || !campaignTypeValue) {
+      return res.status(400).json({
+        error:
+          'tenantId, templateId, name and campaignType (or type) are required'
+      });
     }
 
-    // Check if tenant exists and is not soft-deleted (assuming soft delete uses deletedAt)
-    const tenantExists = await prisma.tenant.findFirst({
-      where: {
-        id: tenantId,
-        deletedAt: null,
-      },
-    });
+    // 5) Make sure it’s one of your enum values
+    if (![ "COLD_OUTREACH", "FOLLOW_UP_SEQUENCE", "LEAD_NURTURING","RE_ENGAGEMENT"].includes(campaignTypeValue)) {
+      return res.status(400).json({
+        error: `campaignType must be one of: ${[ "COLD_OUTREACH", "FOLLOW_UP_SEQUENCE", "LEAD_NURTURING","RE_ENGAGEMENT"].join(
+          ', '
+        )}`
+      });
+    }
 
+    // 6) Your existing tenant & template checks
+    const tenantExists = await prisma.tenant.findFirst({
+      where: { id: tenantId, deletedAt: null }
+    });
     if (!tenantExists) {
       return res.status(404).json({ error: 'Tenant not found' });
     }
 
-    // Check if template exists, belongs to tenant, and is not soft-deleted
     const templateExists = await prisma.emailTemplate.findFirst({
-      where: {
-        id: templateId,
-        tenantId,
-        deletedAt: null,
-      },
+      where: { id: templateId, tenantId, deletedAt: null }
     });
-
     if (!templateExists) {
-      return res.status(404).json({ error: 'Template not found or does not belong to tenant' });
+      return res
+        .status(404)
+        .json({ error: 'Template not found or does not belong to tenant' });
     }
 
-    // Check if campaign with same tenantId, templateId, and scheduledAt already exists
+    // 7) Prevent duplicates
     const existingCampaign = await prisma.emailCampaign.findFirst({
-      where: {
-        tenantId,
-        templateId,
-        scheduledAt,
-      },
+      where: { tenantId, templateId, scheduledAt }
     });
-
     if (existingCampaign) {
-      return res.status(409).json({ error: 'Campaign is already scheduled with the same tenant, template, and scheduled time' });
+      return res.status(409).json({
+        error:
+          'A campaign with the same tenant, template and scheduled time already exists'
+      });
     }
 
-    // Create the campaign after validations
+    // 8) Finally, create it
     const campaign = await prisma.emailCampaign.create({
       data: {
         tenantId,
         templateId,
         scheduledAt,
-      },
+        name,
+        description,            // optional
+        campaign_type: campaignTypeValue
+      }
     });
 
-    res.status(201).json(campaign);
+    return res.status(201).json(campaign);
   } catch (error) {
     console.error('Error creating campaign:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 };
-
-
-
 // Get All Campaigns for a Tenant
 export const getCampaigns = async (req, res) => {
   try {

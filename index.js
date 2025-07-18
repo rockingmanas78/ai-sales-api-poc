@@ -21,6 +21,7 @@ import updateSubscriptionRoute from './routes/updateSubscription.route.js'
 import dashboardRouter from './routes/dashboard.route.js';
 import analyticsRouter from './routes/analytics.route.js';
 
+import { startEmailWorker } from './services/emailWorker.service.js';
 
 
 const app = express();
@@ -82,4 +83,8 @@ setInterval(async () => {
 }, 60_000);
 // Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server runs on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server runs on port ${PORT}`);
+  processNextBatch();
+  //startEmailWorker(); 
+});

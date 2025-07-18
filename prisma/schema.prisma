@@ -203,6 +203,9 @@ model EmailCampaign {
   scheduledAt   DateTime?
   createdAt     DateTime       @default(now())
   status        CampaignStatus @default(DRAFT)
+  name          String
+  description   String?
+  campaign_type CampaignType
   bulkEmailJobs BulkEmailJob[]
   campaignLeads CampaignLead[]
   template      EmailTemplate  @relation(fields: [templateId], references: [id])
@@ -369,6 +372,13 @@ enum Experiment {
   A
   B
   C
+}
+
+enum CampaignType {
+  COLD_OUTREACH
+  FOLLOW_UP_SEQUENCE
+  LEAD_NURTURING
+  RE_ENGAGEMENT
 }
 
 enum lead_source {

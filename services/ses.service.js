@@ -108,5 +108,6 @@ export async function sendEmail({
     ...(configurationSetName && { ConfigurationSetName: configurationSetName })
   });
 
-  return await ses.send(cmd);
+  let res = await ses.send(cmd);
+  return res;
 }
