@@ -186,9 +186,6 @@ export const verifyPhonePePaymentStatus = async (req, res) => {
 
   try {
     const status = await verifyPhonePeStatus(orderId);
-
-    // console.log(status);
-
     if (!status || typeof status !== 'object') {
       return res.status(502).json({ message: 'Invalid response from PhonePe' });
     }
