@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PlanType, PrismaClient } from '@prisma/client';
 import { addMonths } from 'date-fns';
 import dotenv from 'dotenv';
 import { initiatePhonePePayment, verifyPhonePeStatus } from '../services/payment.service.js';
@@ -28,6 +28,10 @@ export const updateSubscription = async (req, res) => {
       return res.status(400).json({ message: 'Invalid plan version ID' });
     }
 
+    if (!planVersion?.Plan) {
+      return res.status(400).json({ message: 'Plan relation missing in PlanVersion' });
+    }
+
     // 2. Validate tenant
     const tenant = await prisma.tenant.findFirst({
       where: { id: tenantId, deletedAt: null }
@@ -38,13 +42,30 @@ export const updateSubscription = async (req, res) => {
     }
 
     const newStart = new Date();
-    const newEnd = addMonths(newStart, 1);//--
+    const newEnd = addMonths(newStart, 1); //--
 
     // 3. Update tenant's plan code
-    await prisma.tenant.update({
-      where: { id: tenantId },
-      data: { plan: planVersion.Plan.code }
-    });
+    const planCode = planVersion?.Plan?.code; // e.g., "STARTER"
+
+    console.log(PlanType);
+
+    // Make sure planCode is a valid value
+    if (!planCode || typeof planCode !== 'string' || !Object.values(PlanType).includes(planCode)) {
+      console.log(`Invalid Plan Code ${planCode} `);
+      return res.status(500).json({ message: 'Invalid Plan Code' });
+    }
+
+    try {
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+          plan: planCode, // ✅ Use enum mapping
+        },
+      });
+    } catch (err) {
+      console.error('Error updating tenant plan:', err);
+      return res.status(500).json({ message: 'Failed to update tenant plan' });
+    }
 
     // 4. Update or create subscription
     const existingSub = await prisma.subscription.findFirst({
@@ -52,50 +73,71 @@ export const updateSubscription = async (req, res) => {
     });
 
     let subscription;
-    if (existingSub) {
-      subscription = await prisma.subscription.update({
-        where: { id: existingSub.id },
-        data: {
-          planVersionId: versionId,
-          zone: planVersion.zone,
-          currentStart: newStart,
-          currentEnd: newEnd
-        }
-      });
-    } else {
-      subscription = await prisma.subscription.create({
-        data: {
-          tenantId,
-          planVersionId: versionId,
-          zone: planVersion.zone,
-          status: 'ACTIVE',
-          currentStart: newStart,
-          currentEnd: newEnd
-        }
-      });
+    try {
+      if (existingSub) {
+        subscription = await prisma.subscription.update({
+          where: { id: existingSub.id },
+          data: {
+            planVersionId: versionId,
+            zone: planVersion.zone,
+            currentStart: newStart,
+            currentEnd: newEnd
+          }
+        });
+      } else {
+        subscription = await prisma.subscription.create({
+          data: {
+            tenantId,
+            planVersionId: versionId,
+            zone: planVersion.zone,
+            status: 'ACTIVE',
+            currentStart: newStart,
+            currentEnd: newEnd
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Error saving subscription:', err);
+      return res.status(500).json({ message: 'Failed to create/update subscription' });
     }
 
     // 5. PhonePe payment integration
     let paymentInfo = null;
 
-    if (planVersion.prices.length > 0) {
-      const amount = planVersion.prices[0].price; // amount in paisa
+    if (typeof planVersion.basePriceCents !== 'number') {
+      return res.status(500).json({ message: 'Plan base price is invalid' });
+    }
 
-      const { merchantTransactionId, redirectUrl } = await initiatePhonePePayment(
-        tenantId,
-        amount
-      );
+    if (planVersion.basePriceCents > 0) {
+      const amount = planVersion.basePriceCents; // amount in paisa
+
+      let paymentResponse;
+      try {
+        paymentResponse = await initiatePhonePePayment(tenantId, amount);
+      } catch (err) {
+        console.error('Failed to initiate PhonePe transaction:', err);
+        return res.status(502).json({ message: 'Failed to initiate payment process' });
+      }
+
+      const { merchantTransactionId, redirectUrl } = paymentResponse || {};
+
+      if (!merchantTransactionId || !redirectUrl) {
+        return res.status(500).json({ message: 'PhonePe did not return valid transaction data' });
+      }
+
+      console.log("TransactionId:", merchantTransactionId);
+      console.log("redirectUrl:", redirectUrl);
 
       // Save transaction
-      await prisma.paymentTransaction.create({
-        data: {
-          tenantId,
-          subscriptionId: subscription.id,
-          phonepeOrderId: merchantTransactionId,
-          amount,
-          status: 'INITIATED'
-        }
-      });
+      // await prisma.paymentTransaction.create({
+      //   data: {
+      //     tenantId,
+      //     subscriptionId: subscription.id,
+      //     phonepeOrderId: merchantTransactionId,
+      //     amount,
+      //     status: 'INITIATED'
+      //   }
+      // });
 
       paymentInfo = {
         orderId: merchantTransactionId,
@@ -115,22 +157,27 @@ export const updateSubscription = async (req, res) => {
   }
 };
 
+
 // Verify PhonePe transaction status
 export const verifyPhonePePaymentStatus = async (req, res) => {
   const { orderId } = req.params;
 
-  if (!orderId) {
-    return res.status(400).json({ message: 'Order ID is required' });
+  if (!orderId || typeof orderId !== 'string') {
+    return res.status(400).json({ message: 'Order ID is required and must be a string' });
   }
 
   try {
     const status = await verifyPhonePeStatus(orderId);
 
+    if (!status || typeof status !== 'object') {
+      return res.status(502).json({ message: 'Invalid response from PhonePe' });
+    }
+
     // Update DB
-    await prisma.paymentTransaction.updateMany({
-      where: { phonepeOrderId: orderId },
-      data: { status }
-    });
+    // await prisma.paymentTransaction.updateMany({
+    //   where: { phonepeOrderId: orderId },
+    //   data: { status }
+    // });
 
     return res.status(200).json({
       message: 'Payment status fetched',
