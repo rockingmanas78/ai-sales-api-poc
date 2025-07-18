@@ -225,6 +225,10 @@ export const verifyPhonePePaymentStatus = async (req, res) => {
 
     const state = status.state;
 
+    if (!status || typeof status !== 'object') {
+      return res.status(502).json({ message: 'Invalid response from PhonePe' });
+    }
+
     // Update DB
     // Prisma doesn't support updateManyAndReturn by default.
     // We'll use updateMany + findMany for side-effects as needed.
