@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { PrismaClient, LeadStatus } from '@prisma/client';
 import { capCheck } from '../utils/capGuard.js';
-import { getCapFromPlanVersion } from '../utils/getCapFromPlanVersion.js'; // make sure you import this too
+import { getCapFromPlanVersion } from '../utils/getCapFromPlanVersion.js';
 
 const prisma = new PrismaClient();
 const AI_ENDPOINT = 'https://lead-generation-pdh3.onrender.com/api/extract/search';
