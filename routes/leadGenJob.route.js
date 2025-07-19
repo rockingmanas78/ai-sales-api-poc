@@ -1,11 +1,14 @@
 import { Router } from 'express';
-import { searchAndExtract } from '../controllers/leadGenJob.controller.js';
+import { getSearchJobStatus, searchAndExtract } from '../controllers/leadGenJob.controller.js';
 const router = Router();
 import verifyToken from '../middlewares/verifyToken.js';
 import authorize from '../middlewares/rbac.js';
 
 // POST /api/search_and_extract
 router.post('/search_and_extract', verifyToken(), authorize('manage_leads'),searchAndExtract);
+
+// get Lead generation job status
+router.get('/status', verifyToken(), authorize('manage_leads'),getSearchJobStatus);
 
 export default router;
 
