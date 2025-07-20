@@ -20,6 +20,10 @@ import updateSubscriptionRoute from './routes/updateSubscription.route.js'
 //import reportRouter from './routes/report.route.js';
 import dashboardRouter from './routes/dashboard.route.js';
 import analyticsRouter from './routes/analytics.route.js';
+import companyProfileRouter from './routes/companyProfile.route.js';
+import companyQARouter from './routes/companyQA.route.js';
+import productRouter from './routes/product.route.js';
+import productQaRoutes from './routes/product.route.js'
 
 import { startEmailWorker } from './services/emailWorker.service.js';
 
@@ -66,6 +70,12 @@ app.use("/api/plan", pricingRoute);
 app.use("/api/subscription", updateSubscriptionRoute);
 app.use('/api', dashboardRouter);
 app.use('/api/analytics', analyticsRouter);
+app.use('/api/company', companyProfileRouter);
+app.use('/api', companyQARouter);
+app.use('/api', productRouter);
+app.use('/api/products/:productId/qa', productQaRoutes);
+
+
 
 
 // Global error handler

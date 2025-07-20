@@ -38,7 +38,15 @@ const permissions = {
     'view_templates',
     
     // Reports
-    'view_reports'
+    'view_reports',
+
+    //Company & Product QA
+    'manage_qas',
+    'view_qas',
+
+    //products
+    'view_products',
+    'manage_products'
   ],
   
   MANAGER: [
@@ -61,7 +69,13 @@ const permissions = {
     'manage_own_templates',
     
     // Reports (limited)
-    'view_own_reports'
+    'view_own_reports',
+    
+    //Company & Product QA 
+    'view_qas',
+
+    //products
+    'view_products'
   ]
 };
 
