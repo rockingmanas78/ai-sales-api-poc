@@ -109,14 +109,14 @@ export const getDashboardLeads = async (req, res) => {
       orderBy: {
         createdAt: 'desc',
       },
-      take: 5,
-      select: {
-        companyName: true,
-        contactEmail: true,
-        contactName: true,
-        contactPhone: true,
-        status: true,
-      },
+      // take: 5,
+      // select: {
+      //   companyName: true,
+      //   contactEmail: true,
+      //   contactName: true,
+      //   contactPhone: true,
+      //   status: true,
+      // },
     });
 
     // Calculate counts

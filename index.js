@@ -29,7 +29,7 @@ dotenv.config();
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:8080',
-  'https://d7c7111515fa.ngrok-free.app'
+  'https://717ec3437b36.ngrok-free.app'
 ];
 app.use(express.json());
 
