@@ -7,6 +7,8 @@ import {
   getLeadSourceData,
   getCampaignStats,
 } from '../services/analytics.service.js';
+import flatten from '../utils/flatten.js';
+import { prisma } from './bulkEmail.controller.js';
 
 export const getAnalyticsOverview = async (req, res) => {
   try {
@@ -51,3 +53,61 @@ export const getAnalyticsOverview = async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
+
+export const getViewUsage = async(req , res) => {
+  try {
+    const tenantId = req.user?.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID is required' });
+    }
+
+    const tenant = await prisma.tenant.findFirst({
+      where : {id : tenantId}
+    })
+
+    const tenantPlan = tenant.plan;
+
+    const plans = await prisma.plan.findMany({
+      where: {code : tenantPlan},
+      include: {
+        versions: {
+          where: {
+            // zone,
+            // bucket: { in: [bucket, "PUBLIC"] },
+            cadence: "MONTHLY"
+          },
+          orderBy: {
+            version: "desc"
+          },
+          take: 1,
+          include: {
+            components: true
+          }
+        }
+      }
+    });
+
+    console.log(plans)
+
+    // Extract only required fields for each component
+    let components = [];
+    if (plans.length > 0 && plans[0].versions.length > 0) {
+      components = plans[0].versions[0].components.map(c => ({
+        metric: c.metric,
+        includedQty: c.includedQty,
+        capPeriod: c.capPeriod,
+        overageCents: c.overageCents
+      }));
+    }
+
+
+    res.status(200).json({
+      success: true,
+      components : components
+    });
+  } catch (error) {
+    console.error('Error in getViewUsage:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
