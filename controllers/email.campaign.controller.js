@@ -15,7 +15,7 @@ export const createCampaign = async (req, res) => {
       scheduledAt,
       name,
       description,   // optional
-      // campaign_type   // <-- we’ll pull this manually below
+      campaign_type   // <-- we’ll pull this manually below
     } = req.body;
 
     // 3) Try both keys: campaignType or type

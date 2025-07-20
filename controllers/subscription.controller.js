@@ -50,28 +50,37 @@ export const updateSubscription = async (req, res) => {
     let amount = 0;
     const requiresPayment = planVersion.basePriceCents > 0;
 
-    // 3. Update tenant's plan code
-    const planCode = planVersion?.Plan?.code; // e.g., "STARTER"
+    // 3. Initiate PhonePe payment if required (moved up to happen before DB updates)
+    if (requiresPayment) {
+      if (typeof planVersion.basePriceCents !== 'number' || planVersion.basePriceCents < 0) {
+        return res.status(500).json({ message: 'Plan base price is invalid' });
+      }
 
-    console.log(PlanType);
+      amount = planVersion.basePriceCents; // amount in paisa
 
-    // Make sure planCode is a valid value
-    if (!planCode || typeof planCode !== 'string' || !Object.values(PlanType).includes(planCode)) {
-      console.log(`Invalid Plan Code ${planCode} `);
-      return res.status(500).json({ message: 'Invalid Plan Code' });
+      let paymentResponse;
+      try {
+        paymentResponse = await initiatePhonePePayment(tenantId, amount);
+      } catch (err) {
+        console.error('Failed to initiate PhonePe transaction:', err);
+        return res.status(502).json({ message: 'Failed to initiate payment process' });
+      }
+
+      const { merchantTransactionId: phonePeMerchantTransactionId, redirectUrl: phonePeRedirectUrl } = paymentResponse || {};
+
+      if (!phonePeMerchantTransactionId || !phonePeRedirectUrl) {
+        return res.status(500).json({ message: 'PhonePe did not return valid transaction data' });
+      }
+
+      merchantTransactionId = phonePeMerchantTransactionId;
+      redirectUrl = phonePeRedirectUrl;
+
+      console.log("TransactionId:", merchantTransactionId);
+      console.log("redirectUrl:", redirectUrl);
     }
 
-    try {
-      await prisma.tenant.update({
-        where: { id: tenantId },
-        data: {
-          plan: planCode, // ✅ Use enum mapping
-        },
-      });
-    } catch (err) {
-      console.error('Error updating tenant plan:', err);
-      return res.status(500).json({ message: 'Failed to update tenant plan' });
-    }
+    // 4. Update tenant's plan code
+    // const planCode = planVersion?.Plan?.code; // e.g., "STARTER"
 
     // 3. Initiate PhonePe payment if required (moved up to happen before DB updates)
     if (requiresPayment) {
@@ -209,15 +218,12 @@ export const verifyPhonePePaymentStatus = async (req, res) => {
 
   try {
     const status = await verifyPhonePeStatus(orderId);
+
     if (!status || typeof status !== 'object') {
       return res.status(502).json({ message: 'Invalid response from PhonePe' });
     }
 
     const state = status.state;
-
-    if (!status || typeof status !== 'object') {
-      return res.status(502).json({ message: 'Invalid response from PhonePe' });
-    }
 
     // Update DB
     // Prisma doesn't support updateManyAndReturn by default.
