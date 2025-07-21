@@ -4,6 +4,20 @@ export function detectZone(req, res, next) {
   if (req.headers["x-user-zone"]) return next();
 
   const ip = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  console.log("IP to lookup:", ip);
+
+  // Check for localhost or private IPs
+  if (
+    ip === "127.0.0.1" ||
+    ip === "::1" ||
+    ip.startsWith("192.168.") ||
+    ip.startsWith("10.") ||
+    ip.startsWith("172.")
+  ) {
+    req.headers["x-user-zone"] = "IN"; // or your default
+    req.headers["x-user-country"] = "IN";
+    return next();
+  }
 
   ipinfo(ip, process.env.IPINFO_TOKEN, (err, data) => {
     if (!err && data?.country) {
@@ -11,11 +25,15 @@ export function detectZone(req, res, next) {
       req.headers["x-user-zone"] = zone;
       req.headers["x-user-country"] = data.country;
     } else {
-      console.warn("IP info failed:", err);
+      console.warn("IP info failed:", err?.message || err);
+      // Fallback zone if lookup fails
+      req.headers["x-user-zone"] = "ROW";
+      req.headers["x-user-country"] = "ROW";
     }
     next();
   });
 }
+
 
 
 export function mapCountryToZone(cc) {
