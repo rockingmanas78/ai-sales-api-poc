@@ -23,9 +23,11 @@ import analyticsRouter from './routes/analytics.route.js';
 import companyProfileRouter from './routes/companyProfile.route.js';
 import companyQARouter from './routes/companyQA.route.js';
 import productRouter from './routes/product.route.js';
-import productQaRoutes from './routes/product.route.js'
-
-import { startEmailWorker } from './services/emailWorker.service.js';
+import productQARoutes from './routes/productQA.route.js'
+import knowledgeDocumentRouter from './routes/knowledgeDocument.route.js';
+import websiteRoutes from './routes/websiteContent.route.js';
+import bulkSnippetRoutes from './routes/bulkSnippet.routes.js';
+//import { startEmailWorker } from './services/emailWorker.service.js';
 
 
 const app = express();
@@ -74,10 +76,10 @@ app.use('/api/analytics', analyticsRouter);
 app.use('/api/company', companyProfileRouter);
 app.use('/api', companyQARouter);
 app.use('/api', productRouter);
-app.use('/api/products/:productId/qa', productQaRoutes);
-
-
-
+app.use('/api/products/:productId/qa', productQARoutes);
+app.use('/api/documents', knowledgeDocumentRouter);
+app.use('/api/websites', websiteRoutes);
+app.use('/api/snippets', bulkSnippetRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {
