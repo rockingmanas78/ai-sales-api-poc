@@ -28,7 +28,6 @@ import bulkSnippetRoutes from './routes/bulkSnippet.routes.js';
 import waitListRouter from './routes/waitList.route.js';
 //import { startEmailWorker } from './services/emailWorker.service.js';
 
-
 const app = express();
 
 dotenv.config();

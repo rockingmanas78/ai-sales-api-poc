@@ -93,7 +93,6 @@ export const updateSnippet = async (req, res) => {
   }
 };
 
-
 // DELETE a snippet
 export const deleteSnippet = async (req, res) => {
   try {
@@ -116,4 +115,3 @@ export const deleteSnippet = async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 };
-
