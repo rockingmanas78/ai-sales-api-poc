@@ -1,7 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
-
 import authRouter from './routes/auth.route.js';
 import tenantRouter from './routes/tenant.route.js';
 import userRouter from './routes/user.route.js';
@@ -17,7 +16,6 @@ import bulkEmailRouter from './routes/bulkEmail.routes.js'
 import { processNextBatch } from './controllers/bulkEmail.controller.js';
 import pricingRoute     from './routes/pricing.route.js'
 import updateSubscriptionRoute from './routes/updateSubscription.route.js'
-//import reportRouter from './routes/report.route.js';
 import dashboardRouter from './routes/dashboard.route.js';
 import analyticsRouter from './routes/analytics.route.js';
 import companyProfileRouter from './routes/companyProfile.route.js';
