@@ -3,40 +3,47 @@ import prisma from '../utils/prisma.client.js';
 // CREATE a new bulk snippet
 export const createSnippet = async (req, res) => {
   try {
-    const { content, category } = req.body;
-    const tenantId = req.user.tenantId;
+    const { text } = req.body;
+    const tenantId = req.user.tenantId; 
+
+    if (!text) {
+      return res.status(400).json({ message: 'Text is required.' });
+    }
 
     const snippet = await prisma.bulkSnippet.create({
       data: {
-        content,
-        category,
-        tenantId,
+        text,
+        tenant_id: tenantId,
       },
     });
 
-    res.status(201).json({ message: 'Snippet created successfully', snippet });
+    return res.status(201).json({ message: 'Snippet created', data: snippet });
   } catch (error) {
     console.error('Error creating snippet:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Failed to create snippet', error: error.message });
   }
 };
-
 // GET all snippets (with optional pagination and filtering)
 export const listSnippets = async (req, res) => {
   try {
-    const tenantId = req.user.tenantId;
+    const { tenantId } = req.user;
 
     const snippets = await prisma.bulkSnippet.findMany({
-      where: { tenantId },
-      orderBy: { createdAt: 'desc' },
+      where: {
+        tenant_id: tenantId,
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
     });
 
-    res.status(200).json(snippets);
+    res.status(200).json({ snippets });
   } catch (error) {
     console.error('Error fetching snippets:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ error: 'Failed to fetch snippets' });
   }
 };
+
 
 // GET one snippet by ID
 export const getSnippetById = async (req, res) => {
@@ -48,7 +55,7 @@ export const getSnippetById = async (req, res) => {
       where: { id },
     });
 
-    if (!snippet || snippet.tenantId !== tenantId) {
+  if (!snippet || snippet.tenant_id !== tenantId){
       return res.status(404).json({ message: 'Snippet not found' });
     }
 
@@ -66,9 +73,11 @@ export const updateSnippet = async (req, res) => {
     const { content, category } = req.body;
     const tenantId = req.user.tenantId;
 
-    const existingSnippet = await prisma.bulkSnippet.findUnique({ where: { id } });
+    const existingSnippet = await prisma.bulkSnippet.findUnique({
+      where: { id },
+    });
 
-    if (!existingSnippet || existingSnippet.tenantId !== tenantId) {
+    if (!existingSnippet || existingSnippet.tenant_id !== tenantId) {
       return res.status(404).json({ message: 'Snippet not found' });
     }
 
@@ -84,15 +93,18 @@ export const updateSnippet = async (req, res) => {
   }
 };
 
+
 // DELETE a snippet
 export const deleteSnippet = async (req, res) => {
   try {
     const { id } = req.params;
     const tenantId = req.user.tenantId;
 
-    const existingSnippet = await prisma.bulkSnippet.findUnique({ where: { id } });
+    const existingSnippet = await prisma.bulkSnippet.findUnique({
+      where: { id },
+    });
 
-    if (!existingSnippet || existingSnippet.tenantId !== tenantId) {
+    if (!existingSnippet || existingSnippet.tenant_id !== tenantId) {
       return res.status(404).json({ message: 'Snippet not found' });
     }
 
@@ -104,3 +116,4 @@ export const deleteSnippet = async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 };
+

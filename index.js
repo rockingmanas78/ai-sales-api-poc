@@ -14,7 +14,7 @@ import bodyParser from 'body-parser';
 import leadGenRouter from './routes/leadGenJob.route.js';
 import bulkEmailRouter from './routes/bulkEmail.routes.js'
 import { processNextBatch } from './controllers/bulkEmail.controller.js';
-import pricingRoute     from './routes/pricing.route.js'
+import pricingRoute from './routes/pricing.route.js';
 import updateSubscriptionRoute from './routes/updateSubscription.route.js'
 import dashboardRouter from './routes/dashboard.route.js';
 import analyticsRouter from './routes/analytics.route.js';
@@ -25,6 +25,7 @@ import productQARoutes from './routes/productQA.route.js'
 import knowledgeDocumentRouter from './routes/knowledgeDocument.route.js';
 import websiteRoutes from './routes/websiteContent.route.js';
 import bulkSnippetRoutes from './routes/bulkSnippet.routes.js';
+import waitListRouter from './routes/waitList.route.js';
 //import { startEmailWorker } from './services/emailWorker.service.js';
 
 
@@ -78,6 +79,7 @@ app.use('/api/products/:productId/qa', productQARoutes);
 app.use('/api/documents', knowledgeDocumentRouter);
 app.use('/api/websites', websiteRoutes);
 app.use('/api/snippets', bulkSnippetRoutes);
+app.use('/api', waitListRouter);
 
 // Global error handler
 app.use((err, req, res, next) => {
