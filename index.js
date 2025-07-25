@@ -14,14 +14,19 @@ import bodyParser from 'body-parser';
 import leadGenRouter from './routes/leadGenJob.route.js';
 import bulkEmailRouter from './routes/bulkEmail.routes.js'
 import { processNextBatch } from './controllers/bulkEmail.controller.js';
-import pricingRoute     from './routes/pricing.route.js'
+import pricingRoute from './routes/pricing.route.js';
 import updateSubscriptionRoute from './routes/updateSubscription.route.js'
 import dashboardRouter from './routes/dashboard.route.js';
 import analyticsRouter from './routes/analytics.route.js';
 import companyProfileRouter from './routes/companyProfile.route.js';
 import companyQARouter from './routes/companyQA.route.js';
 import productRouter from './routes/product.route.js';
-import productQaRoutes from './routes/product.route.js'
+import productQARoutes from './routes/productQA.route.js'
+import knowledgeDocumentRouter from './routes/knowledgeDocument.route.js';
+import websiteRoutes from './routes/websiteContent.route.js';
+import bulkSnippetRoutes from './routes/bulkSnippet.routes.js';
+import waitListRouter from './routes/waitList.route.js';
+//import { startEmailWorker } from './services/emailWorker.service.js';
 
 const app = express();
 
@@ -29,8 +34,7 @@ dotenv.config();
 
 const allowedOrigins = [
   'http://localhost:3000',
-  'http://localhost:8080',
-  'https://717ec3437b36.ngrok-free.app'
+  'http://localhost:8080'
 ];
 app.use(express.json());
 
@@ -69,10 +73,11 @@ app.use('/api/analytics', analyticsRouter);
 app.use('/api/company', companyProfileRouter);
 app.use('/api', companyQARouter);
 app.use('/api', productRouter);
-app.use('/api/products/:productId/qa', productQaRoutes);
-
-
-
+app.use('/api/products/:productId/qa', productQARoutes);
+app.use('/api/documents', knowledgeDocumentRouter);
+app.use('/api/websites', websiteRoutes);
+app.use('/api/snippets', bulkSnippetRoutes);
+app.use('/api', waitListRouter);
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -92,5 +97,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server runs on port ${PORT}`);
   processNextBatch();
-  //startEmailWorker(); 
 });

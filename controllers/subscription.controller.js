@@ -82,6 +82,38 @@ export const updateSubscription = async (req, res) => {
     // 4. Update tenant's plan code
     // const planCode = planVersion?.Plan?.code; // e.g., "STARTER"
 
+    // 3. Initiate PhonePe payment if required (moved up to happen before DB updates)
+    if (requiresPayment) {
+      if (typeof planVersion.basePriceCents !== 'number' || planVersion.basePriceCents < 0) {
+        return res.status(500).json({ message: 'Plan base price is invalid' });
+      }
+
+      amount = planVersion.basePriceCents; // amount in paisa
+
+      let paymentResponse;
+      try {
+        paymentResponse = await initiatePhonePePayment(tenantId, amount);
+      } catch (err) {
+        console.error('Failed to initiate PhonePe transaction:', err);
+        return res.status(502).json({ message: 'Failed to initiate payment process' });
+      }
+
+      const { merchantTransactionId: phonePeMerchantTransactionId, redirectUrl: phonePeRedirectUrl } = paymentResponse || {};
+
+      if (!phonePeMerchantTransactionId || !phonePeRedirectUrl) {
+        return res.status(500).json({ message: 'PhonePe did not return valid transaction data' });
+      }
+
+      merchantTransactionId = phonePeMerchantTransactionId;
+      redirectUrl = phonePeRedirectUrl;
+
+      console.log("TransactionId:", merchantTransactionId);
+      console.log("redirectUrl:", redirectUrl);
+    }
+
+    // 4. Update tenant's plan code
+    // const planCode = planVersion?.Plan?.code; // e.g., "STARTER"
+
     // console.log(PlanType);
 
     // // Make sure planCode is a valid value
@@ -186,6 +218,15 @@ export const verifyPhonePePaymentStatus = async (req, res) => {
 
   try {
     const status = await verifyPhonePeStatus(orderId);
+
+    if (!status || typeof status !== 'object') {
+      return res.status(502).json({ message: 'Invalid response from PhonePe' });
+    }
+
+    const state = status.state;
+
+    // console.log(status);
+
     if (!status || typeof status !== 'object') {
       return res.status(502).json({ message: 'Invalid response from PhonePe' });
     }

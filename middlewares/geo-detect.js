@@ -26,7 +26,6 @@ export function detectZone(req, res, next) {
       req.headers["x-user-country"] = data.country;
     } else {
       console.warn("IP info failed:", err?.message || err);
-      // Fallback zone if lookup fails
       req.headers["x-user-zone"] = "ROW";
       req.headers["x-user-country"] = "ROW";
     }

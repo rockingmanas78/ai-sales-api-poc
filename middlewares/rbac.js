@@ -46,7 +46,11 @@ const permissions = {
 
     //products
     'view_products',
-    'manage_products'
+    'manage_products',
+
+    //knowledgeDoc
+    'manage_documents',
+    'view_documents',
   ],
   
   MANAGER: [
@@ -75,7 +79,10 @@ const permissions = {
     'view_qas',
 
     //products
-    'view_products'
+    'view_products',
+
+    //knowledgeDoc
+    'view_documents',
   ]
 };
 
