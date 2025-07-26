@@ -26,6 +26,7 @@ import knowledgeDocumentRouter from './routes/knowledgeDocument.route.js';
 import websiteRoutes from './routes/websiteContent.route.js';
 import bulkSnippetRoutes from './routes/bulkSnippet.routes.js';
 import waitListRouter from './routes/waitList.route.js';
+import feedbackRouter from './routes/feedback.route.js';
 //import { startEmailWorker } from './services/emailWorker.service.js';
 
 const app = express();
@@ -78,6 +79,8 @@ app.use('/api/documents', knowledgeDocumentRouter);
 app.use('/api/websites', websiteRoutes);
 app.use('/api/snippets', bulkSnippetRoutes);
 app.use('/api', waitListRouter);
+app.use('/api/feedback', feedbackRouter);
+
 
 // Global error handler
 app.use((err, req, res, next) => {
