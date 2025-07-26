@@ -51,6 +51,11 @@ const permissions = {
     //knowledgeDoc
     'manage_documents',
     'view_documents',
+
+    //feedback
+      'submit_feedback',
+      'view_feedbacks',
+      'delete_feedback'
   ],
   
   MANAGER: [
@@ -83,6 +88,10 @@ const permissions = {
 
     //knowledgeDoc
     'view_documents',
+
+    //feedback
+    'submit_feedback',
+    'view_feedbacks',
   ]
 };
 
