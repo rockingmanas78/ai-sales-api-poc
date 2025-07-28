@@ -32,7 +32,6 @@ export const verifyToken = (options = { required: true }) => {
         role: decoded.role,
         tenantId: decoded.tenantId,
       };
-
       next();
     } catch (error) {
       console.error("JWT Error:", error);

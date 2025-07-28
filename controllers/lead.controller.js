@@ -1,5 +1,8 @@
 // controllers/leadController.js
 import { PrismaClient } from '@prisma/client';
+import { parseCSVToJson } from '../services/csv.service.js';
+import { bulkUploadLeads } from '../services/leadUpload.service.js';
+
 const prisma = new PrismaClient();
 
 // CREATE Lead
@@ -310,3 +313,27 @@ export const bulkUpdateLeadStatus = async (req, res) => {
   }
 };
 
+export const uploadLeadsFromCSV = async (req, res) => {
+  try {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Missing tenantId in token' });
+    }
+
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const filePath = file.path;
+
+    const leadsJson = await parseCSVToJson(filePath); // Convert CSV to JSON
+
+    const result = await bulkUploadLeads(leadsJson, tenantId); // Upload JSON to DB
+
+    res.status(200).json({ message: 'Leads uploaded successfully', result });
+  } catch (error) {
+    console.error('Error uploading leads:', error);
+    res.status(500).json({ error: 'Failed to upload leads from CSV' });
+  }
+};

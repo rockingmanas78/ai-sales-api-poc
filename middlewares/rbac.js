@@ -55,7 +55,12 @@ const permissions = {
     //feedback
       'submit_feedback',
       'view_feedbacks',
-      'delete_feedback'
+      'delete_feedback',
+    
+    // Onboarding management
+    'view_onboarding',
+    'manage_onboarding',
+
   ],
   
   MANAGER: [
