@@ -15,8 +15,9 @@ import { mapCountryToZone } from '../middlewares/geo-detect.js';
 
 export const createTenant = async (req, res) => {
   try {
-    const { name, email, password, versionId } = req.body;
+    const { name, email, password, versionId, onboardingRole, hear_about_us, primary_goal } = req.body;
     const countryCode = req.headers["x-user-zone"];
+    console.log(countryCode);
 
     if (!name || !email || !password || !countryCode) {
       return res.status(400).json({ message: 'Name, email, password, and countryCode are required' });
@@ -80,21 +81,31 @@ export const createTenant = async (req, res) => {
         },
       });
 
-      return { tenant, user, planVersionRecord };
+      const updatedAt= new Date();
+      const onboarding = await tx.tenantOnboarding.upsert({
+        where: { tenant_id: tenant.id },
+        update: {
+          role: onboardingRole,
+          hear_about_us,
+          primary_goal,
+          updated_at: updatedAt
+        },
+        create: {
+          tenant_id: tenant.id,
+          role: onboardingRole,
+          hear_about_us,
+          primary_goal,
+        },
+      });
+
+      return { tenant, user, planVersionRecord, onboarding };
     });
 
-    const { tenant, user} = result;
+    const { tenant, user, onboarding } = result;
     const token = generateTokens(user);
     const { passwordHash, ...userWithoutPassword } = user;
 
-    // Optional payment integration
-    // let paymentInfo = null;
-    // if (selectedVersion.prices.length > 0) {
-    //   const gwResp = await payments.createGatewaySubscription(selectedVersion.prices[0].externalPriceId, tenant);
-    //   paymentInfo = { clientSecret: gwResp.clientSecret };
-    // }
-
-    res.status(201).json({ user: userWithoutPassword, tenant, token });
+    res.status(201).json({ user: userWithoutPassword, tenant, token, onboarding });
   } catch (error) {
     console.error('Error in registerUserAndTenant:', error);
     res.status(500).json({ error: 'Internal server error' });
