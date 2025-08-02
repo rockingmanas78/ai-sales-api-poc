@@ -6,6 +6,7 @@ import {
   sendEmail as sesSendEmail,
   verifyDomainIdentity,
   enableDKIMSigning,
+  initiateSubdomainIdentity,
 } from "../services/ses.service.js";
 
 // POST /ses/onboard-domain
@@ -186,67 +187,94 @@ export async function sendTrackedEmail(req, res, next) {
   }
 }
 
-// export async function onboardDomain(req, res, next) {
-//   const {domainName} = req.body;
-//   if(!domainName) return res.status(400).json({ error: "Domain name is required" });
-//   try {
-//     const token = await verifyDomainIndetity(domainName);
-//     res.json({
-//       message: "Verification initiated",
-//       domain: domainName,
-//       dnsInstruction: {
-//         type: "TXT",
-//         name: `_amazonses.${domainName}`,
-//         value: token,
-//         ttl: 1800,
-//       },
-//     });
-//   } catch (error) {
-//      console.error("Error verifying domain:", error);
-//      res.status(500).json({ error: "Failed to initiate domain verification" });
-//   }
-// }
+// POST /ses/onboard-subdomain
+export async function onboardSubdomain(req, res, next) {
+  try {
+    const { domainId, prefix = 'inbound' } = req.body;
+    const tenantId = req.user.tenantId;
+    if (!domainId) {
+      return res.status(400).json({ error: 'domainId is required' });
+    }
 
-// export async function onboardEmail(req, res, next) {
-//   const { emailAddress } = req.body;
-//   if (!emailAddress) return res.status(400).json({ error: "Email address is required" });
-//   try {
-//     await verifyEmailIdentity(emailAddress);
-//     res.json({ message: `Verification email sent to ${emailAddress}` });
-//   } catch (error) {
-//     console.error("Error verifying email:", error);
-//      res.status(500).json({ error: "Failed to initiate email verification" });
-//    }
-// }
+    // 1) Fetch parent domain and ensure it’s verified
+    const parent = await prisma.domainIdentity.findFirst({
+      where: { id: domainId, tenantId }
+    });
+    if (!parent || parent.verificationStatus !== 'Success') {
+      return res
+        .status(400)
+        .json({ error: 'Base domain not found or not verified' });
+    }
 
-// export async function checkVerificationStatus(req, res, next) {
-//   const { identity } = req.body;
-//   if (!identity) return res.status(400).json({ error: "Identity is required" });
-//   try {
-//     const attrs = await getIdentityVerificationAttributes([identity]);
-//     const record = attrs[identity];
-//     if (!record) return res.status(404).json({ message: `No record for ${identity}` });
-//     const response = { identity, verificationStatus: record.VerificationStatus };
-//     if (record.VerificationToken) response.verificationToken = record.VerificationToken;
-//     res.json(response);
-//   } catch (error) {
-//      console.error("Error checking verification status:", error);
-//      res.status(500).json({ error: "Failed to fetch verification status" });
-//    }
-// }
+    // 2) Build subdomain string
+    const subDomain = `${prefix}.${parent.domainName}`;
 
-// export async function sendTrackedEmail(req, res, next) {
-//   const { toEmail, subject, htmlBody, configurationSetName } = req.body;
-//   if (!toEmail || !subject || !htmlBody || !configurationSetName) {
-//     return res.status(400).json({
-//       error: "toEmail, subject, htmlBody, and configurationSetName are required",
-//     });
-//   }
-//   try {
-//     const result = await sendEmail({ toEmail, subject, htmlBody, configurationSetName });
-//     res.json({ message: "Email sent", messageId: result.MessageId });
-//   } catch (error) {
-//      console.error("Error sending email:", error);
-//      res.status(500).json({ error: "Failed to send email" });
-//    }
-// }
+    // 3) Prevent duplicates
+    const existing = await prisma.domainIdentity.findFirst({
+      where: { tenantId, domainName: subDomain }
+    });
+    if (existing) {
+      return res
+        .status(409)
+        .json({ error: `Subdomain ${subDomain} is already onboarded` });
+    }
+
+    // 4) Call SES to generate DNS instructions
+    const { records, token } = await initiateSubdomainIdentity(subDomain, prefix);
+
+    // 5) Persist the new subdomain identity
+    const record = await prisma.domainIdentity.create({
+      data: {
+        tenantId,
+        domainName:         subDomain,
+        verificationToken:  token,
+        verificationStatus: 'Pending',
+        dkimRecords:        records
+      }
+    });
+
+    // 6) Return instructions to front-end
+    return res.json({
+      message: 'Subdomain onboarding initiated. Add these DNS records:',
+      subdomain:       record,
+      dnsInstructions: records
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+
+// GET /ses/subdomain-status?identity=inbound.example.com
+export async function checkSubdomainStatus(req, res, next) {
+  try {
+    const { identity } = req.query;
+    if (!identity) 
+      return res.status(400).json({ error: 'identity query param is required' });
+
+    // SES: fetch verification attributes
+    const attrs = await getIdentityVerificationAttributes([identity]);
+    const rec   = attrs[identity];
+    if (!rec) 
+      return res.status(404).json({ error: `No SES record for ${identity}` });
+
+    const status = rec.VerificationStatus;
+
+    // Update our DB
+    await prisma.domainIdentity.updateMany({
+      where: { tenantId: req.user.tenantId, domainName: identity },
+      data: {
+        verificationStatus: status,
+        verifiedAt: status === 'Success' ? new Date() : undefined
+      }
+    });
+
+    return res.json({ identity, status });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/*
+[{"ttl": 1800, "Name": "pfos6uc2xytbd42q3k35hcb5npmnfkp5._domainkey.productimate.io", "type": "CNAME", "value": "pfos6uc2xytbd42q3k35hcb5npmnfkp5.dkim.amazonses.com"}, {"ttl": 1800, "Name": "nfbn7mbrelfttbf4ngcaaphsmbqxernd._domainkey.productimate.io", "type": "CNAME", "value": "nfbn7mbrelfttbf4ngcaaphsmbqxernd.dkim.amazonses.com"}, {"ttl": 1800, "Name": "yh7bp6xueooucz5uvo2txjal7wy6up4k._domainkey.productimate.io", "type": "CNAME", "value": "yh7bp6xueooucz5uvo2txjal7wy6up4k.dkim.amazonses.com"}, {"ttl": 1800, "Name": "_dmarc.productimate.io", "type": "TXT", "value": "v=DMARC1; p=none;"}, {"ttl": 1800, "name": "productimate.io", "type": "TXT", "value": "v=spf1 include:amazonses.com ~all"}, {"ttl": 1800, "name": "_amazonses.productimate.io", "type": "TXT", "value": "Z6qwpwuf8d/KxsQW38cvPXCLumCYcRC1gpFmYQrfumE="}]
+*/

@@ -16,7 +16,8 @@ export async function getSpamScore(emailBody, incomingAuth) {
     headers: { 'Content-Type': 'application/json', Authorization: incomingAuth, },
     timeout: 5_000
   });
-  
+  console.log("Status", resp.status);
+
   // assuming the API returns { score: number } – adjust if it's just the number
   if (resp.status !== 200) {
     throw new Error(`Spam API responded ${resp.status}`);

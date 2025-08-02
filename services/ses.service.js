@@ -78,19 +78,6 @@ export async function getIdentityVerificationAttributes(identities) {
   return res.VerificationAttributes;
 }
 
-// export async function sendEmail({ toEmail, subject, htmlBody, configurationSetName }) {
-//   const cmd = new SendEmailCommand({
-//     Destination: { ToAddresses: [toEmail] },
-//     Message: {
-//       Subject: { Data: subject, Charset: 'UTF-8' },
-//       Body:    { Html: { Data: htmlBody, Charset: 'UTF-8' } }
-//     },
-//     Source: process.env.SES_SOURCE_EMAIL,
-//     //ConfigurationSetName: configurationSetName
-//   });
-//   return await ses.send(cmd);
-// }
-
 export async function sendEmail({
   fromEmail,
   toEmail,
@@ -110,4 +97,74 @@ export async function sendEmail({
 
   let res = await ses.send(cmd);
   return res;
+}
+export async function initiateSubdomainIdentity(subDomain, prefix) {
+  // 1) Verify domain (TXT)
+  const verifyCmd = new VerifyDomainIdentityCommand({ Domain: subDomain });
+  const verifyRes = await ses.send(verifyCmd);
+  const token = verifyRes.VerificationToken;
+
+  // 2) Verify DKIM (CNAMEs)
+  const dkimCmd = new VerifyDomainDkimCommand({ Domain: subDomain });
+  const dkimRes = await ses.send(dkimCmd);
+  const dkimTokens = dkimRes.DkimTokens || [];
+
+  // 3) Assemble DNS records
+  const records = [];
+
+  // 3.1 TXT record for SES token
+  records.push({
+    name:  `_amazonses.${prefix}`,
+    type:  'TXT',
+    value: token,
+    ttl:   1800,
+  });
+
+  // 3.2 CNAME records for DKIM
+  dkimTokens.forEach(tok => {
+    records.push({
+      name:  `${tok}._domainkey.${prefix}`,
+      type:  'CNAME',
+      value: `${tok}.dkim.amazonses.com`,
+      ttl:   14400,
+    });
+  });
+
+  // 3.3 DMARC record
+  records.push({
+    name:  `_dmarc.${prefix}`,
+    type:  'TXT',
+    value: 'v=DMARC1; p=none;',
+    ttl:   1800,
+  });
+
+  // 3.4 SPF record
+  records.push({
+    name:  prefix,
+    type:  'TXT',
+    value: 'v=spf1 include:amazonses.com ~all',
+    ttl:   1800,
+  });
+
+  // 3.5 MX record for inbound mail
+  const endpoint = `inbound-smtp.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com`;
+  records.push({
+    name:  prefix,
+    type:  'MX',
+    value: endpoint,
+    ttl:   300,
+  });
+
+  return { records, token };
+}
+
+/**
+ * Fetches SES verification status for one or more identities.
+ * @param {string[]} identities
+ * @returns {Promise<Record<string,{ VerificationStatus: string, VerificationToken?: string }>>}
+ */
+export async function getIdentityVerificationStatus(identities) {
+  const cmd = new GetIdentityVerificationAttributesCommand({ Identities: identities });
+  const res = await ses.send(cmd);
+  return res.VerificationAttributes;
 }
