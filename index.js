@@ -35,20 +35,23 @@ const app = express();
 dotenv.config();
 
 const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:8080'
+  // 'http://localhost:3000',
+  // 'http://localhost:8080',
+  // 'https://dashboard.salefunnel.in',
+  // 'https://3da281c9-e9f5-4010-97e2-26aa63b08eec.lovableproject.com'
 ];
 app.use(express.json());
 
 app.use(cors({
-    origin: (origin, callback) => {
-      // origin will be undefined for non-browser requests (e.g., Postman). 
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
+    // origin: (origin, callback) => {
+    //   // origin will be undefined for non-browser requests (e.g., Postman). 
+    //   if (!origin || allowedOrigins.includes(origin)) {
+    //     callback(null, true);
+    //   } else {
+    //     callback(new Error('Not allowed by CORS'));
+    //   }
+    // },
+    origin: (origin, callback) => callback(null, true),
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
