@@ -25,14 +25,14 @@ export async function verifyDomainIdentity(domainName) {
   const { DkimTokens } = await ses.send(dkimCommands);
 
   let cnameRecords = DkimTokens.map(token => ({
-    Name: `${token}._domainkey`,
+    name: `${token}._domainkey`,
     type: "CNAME",
     value: `${token}.dkim.amazonses.com`,
     ttl: 14400
   }));
 
   cnameRecords.push({
-    Name: `_dmarc`,
+    name: `_dmarc`,
     type: "TXT",
     value: "v=DMARC1; p=none;",
     ttl: 1800
