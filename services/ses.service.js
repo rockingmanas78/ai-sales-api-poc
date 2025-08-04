@@ -9,6 +9,7 @@ import {
     SetIdentityDkimEnabledCommand,
 } from '@aws-sdk/client-ses';
 import { response } from 'express';
+import prisma from '../utils/prisma.client.js';
 
 const ses = new SESClient({
     region: process.env.AWS_SES_REGION || 'ap-south-1',
@@ -167,4 +168,23 @@ export async function getIdentityVerificationStatus(identities) {
   const cmd = new GetIdentityVerificationAttributesCommand({ Identities: identities });
   const res = await ses.send(cmd);
   return res.VerificationAttributes;
+}
+
+export async function processInbound(evt) {
+  const domain = evt.destinations?.[0]?.split('@')[1];   // inbound.tenant.com
+  const tenant = await prisma.domainIdentity.findFirst({
+    where: { domainName: domain, verificationStatus: 'Success' },
+    select: { tenantId: true }
+  });
+
+  // await prisma.inboundEmail.create({
+  //   data: {
+  //     tenantId: tenant?.tenantId ?? null,
+  //     messageId: evt.messageId,
+  //     from: evt.from,
+  //     to:   evt.to?.join(','),
+  //     subject: evt.subject,
+  //     receivedAt: new Date(evt.timestamp)
+  //   }
+  // });
 }

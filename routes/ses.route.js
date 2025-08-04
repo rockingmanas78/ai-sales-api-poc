@@ -1,5 +1,5 @@
 import express from 'express';
-import { onboardDomain,onboardEmail,checkVerificationStatus,sendTrackedEmail, listIdentities, checkSubdomainStatus, onboardSubdomain } from '../controllers/ses.controller.js';
+import { onboardDomain,onboardEmail,checkVerificationStatus,sendTrackedEmail, listIdentities, checkSubdomainStatus, onboardSubdomain, inboundWebhook } from '../controllers/ses.controller.js';
 import verifyToken from '../middlewares/verifyToken.js';
 import authorize from '../middlewares/rbac.js';
 import { spamScoreController } from '../controllers/email.controller.js';
@@ -16,7 +16,7 @@ router.get('/subdomain-status', verifyToken(), authorize('manage_emails'),  chec
 router.get('/identities', verifyToken(), authorize('view_emails'), listIdentities);
 router.post('/spam-score', spamScoreController);
 router.post('/send-email', verifyToken(), authorize('manage_emails'), sendTrackedEmail);
-//router.post('/inbound', )
+router.post('/inbound', inboundWebhook);
 
 export default router;
 

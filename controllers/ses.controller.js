@@ -275,6 +275,19 @@ export async function checkSubdomainStatus(req, res, next) {
   }
 }
 
+export async function inboundWebhook(req, res, next) {
+  try {
+    if (req.headers['x-internal-secret'] !== process.env.WEBHOOK_SECRET)
+      return res.status(401).json({ error: 'unauthorised' });
+
+    console.log(req.body);
+
+    //await processInbound(req.body);
+    res.json({ status: 'ok' });
+  } catch (e) { next(e); }
+}
+
+
 /*
 [{"ttl": 1800, "Name": "pfos6uc2xytbd42q3k35hcb5npmnfkp5._domainkey.productimate.io", "type": "CNAME", "value": "pfos6uc2xytbd42q3k35hcb5npmnfkp5.dkim.amazonses.com"}, {"ttl": 1800, "Name": "nfbn7mbrelfttbf4ngcaaphsmbqxernd._domainkey.productimate.io", "type": "CNAME", "value": "nfbn7mbrelfttbf4ngcaaphsmbqxernd.dkim.amazonses.com"}, {"ttl": 1800, "Name": "yh7bp6xueooucz5uvo2txjal7wy6up4k._domainkey.productimate.io", "type": "CNAME", "value": "yh7bp6xueooucz5uvo2txjal7wy6up4k.dkim.amazonses.com"}, {"ttl": 1800, "Name": "_dmarc.productimate.io", "type": "TXT", "value": "v=DMARC1; p=none;"}, {"ttl": 1800, "name": "productimate.io", "type": "TXT", "value": "v=spf1 include:amazonses.com ~all"}, {"ttl": 1800, "name": "_amazonses.productimate.io", "type": "TXT", "value": "Z6qwpwuf8d/KxsQW38cvPXCLumCYcRC1gpFmYQrfumE="}]
 */
