@@ -1,8 +1,5 @@
 import axios from 'axios';
-
-// read from env (default to the given base URL)
-const BASE_URL = process.env.SPAM_SERVICE_URL
-  || 'https://lead-generation-production-d101.up.railway.app';
+import { AI_SERVICE_ENDPOINT } from '../constants/endpoints.constants.js';
 
 /**
  * Sends the email body to the spam-score API and returns a 0–10 score.
@@ -10,7 +7,7 @@ const BASE_URL = process.env.SPAM_SERVICE_URL
  * @returns {Promise<number>}
  */
 export async function getSpamScore(emailBody, incomingAuth) {
-  const url = `${BASE_URL}/api/get_spam_score`;
+  const url = `${AI_SERVICE_ENDPOINT}/api/get_spam_score`;
   const payload = { email_body: emailBody };
   const resp = await axios.post(url, payload, {
     headers: { 'Content-Type': 'application/json', Authorization: incomingAuth, },

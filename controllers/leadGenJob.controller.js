@@ -2,9 +2,9 @@ import axios from 'axios';
 import { PrismaClient, LeadStatus } from '@prisma/client';
 import { capCheck } from '../utils/capGuard.js';
 import { getCapFromPlanVersion } from '../utils/getCapFromPlanVersion.js';
+import { AI_SERVICE_ENDPOINT } from '../constants/endpoints.constants.js';
 
 const prisma = new PrismaClient();
-const AI_ENDPOINT = 'https://lead-generation-production-d101.up.railway.app/api';
 
 export const searchAndExtract = async (req, res) => {
   try {
@@ -32,7 +32,7 @@ export const searchAndExtract = async (req, res) => {
 
     // call the AI team API, forwarding the token
     const { data } = await axios.post(
-      `${AI_ENDPOINT}/extract/search`,
+      `${AI_SERVICE_ENDPOINT}/extract/search`,
       { prompt, num_results, offset },
       {
         headers: {
@@ -102,7 +102,7 @@ export const getSearchJobStatus = async (req, res) => {
     }
 
     // 3. Fetch the job status/results from the AI service
-    const statusUrl = `${AI_ENDPOINT}/extract/get_job_update?job_id=${job_id}`;
+    const statusUrl = `${AI_SERVICE_ENDPOINT}/extract/get_job_update?job_id=${job_id}`;
     console.log(statusUrl);
     const { data } = await axios.get(statusUrl, {
       headers: {
@@ -110,8 +110,6 @@ export const getSearchJobStatus = async (req, res) => {
         'Content-Type': 'application/json',
       }
     });
-
-    console.log(data);
 
     // 4. Return the raw AI‐service payload to your client
     return res.status(200).json(data);

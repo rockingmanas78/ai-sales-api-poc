@@ -144,6 +144,8 @@ model Lead {
   deletedAt         DateTime?
   contactAddress    String[]
   source            lead_source        @default(AI_GENERATED)
+  linkedInUrl       String?            @unique
+  companySize       Int?               @default(0)
   bulkEmailJobLeads BulkEmailJobLead[]
   campaignLeads     CampaignLead[]
   emailLogs         EmailLog[]
@@ -220,18 +222,24 @@ model EmailCampaign {
 }
 
 model EmailLog {
-  id         String        @id @default(uuid())
-  tenantId   String
-  campaignId String
-  leadId     String
-  status     EmailStatus   @default(QUEUED)
-  sentAt     DateTime?
-  openedAt   DateTime?
-  clickedAt  DateTime?
-  repliedAt  DateTime?
-  campaign   EmailCampaign @relation(fields: [campaignId], references: [id])
-  lead       Lead          @relation(fields: [leadId], references: [id])
-  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+  id              String        @id @default(uuid())
+  tenantId        String
+  campaignId      String
+  leadId          String
+  status          EmailStatus   @default(QUEUED)
+  sentAt          DateTime?
+  openedAt        DateTime?
+  clickedAt       DateTime?
+  repliedAt       DateTime?
+  createdAt       DateTime?     @db.Timestamptz(6)
+  senderName      String?
+  senderEmail     String?
+  recipientEmails String[]
+  subject         String?
+  content         String?
+  campaign        EmailCampaign @relation(fields: [campaignId], references: [id])
+  lead            Lead          @relation(fields: [leadId], references: [id])
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, status])
 }
