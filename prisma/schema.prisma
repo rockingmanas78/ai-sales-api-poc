@@ -146,12 +146,16 @@ model Lead {
   source            lead_source        @default(AI_GENERATED)
   linkedInUrl       String?            @unique
   companySize       Int?               @default(0)
+  jobId             String?
   bulkEmailJobLeads BulkEmailJobLead[]
   campaignLeads     CampaignLead[]
   emailLogs         EmailLog[]
+  LeadGenerationJob LeadGenerationJob? @relation(fields: [jobId], references: [id])
   tenant            Tenant             @relation(fields: [tenantId], references: [id])
 
+  @@unique([jobId, contactEmail], map: "Lead_jobId_email_key")
   @@index([tenantId, status])
+  @@index([jobId])
 }
 
 model DomainIdentity {
@@ -222,24 +226,26 @@ model EmailCampaign {
 }
 
 model EmailLog {
-  id              String        @id @default(uuid())
+  id              String          @id @default(uuid())
   tenantId        String
   campaignId      String
   leadId          String
-  status          EmailStatus   @default(QUEUED)
+  status          EmailStatus     @default(QUEUED)
   sentAt          DateTime?
   openedAt        DateTime?
   clickedAt       DateTime?
   repliedAt       DateTime?
-  createdAt       DateTime?     @db.Timestamptz(6)
+  createdAt       DateTime?       @db.Timestamptz(6)
   senderName      String?
   senderEmail     String?
   recipientEmails String[]
   subject         String?
   content         String?
-  campaign        EmailCampaign @relation(fields: [campaignId], references: [id])
-  lead            Lead          @relation(fields: [leadId], references: [id])
-  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  emailType       EmailType?      @default(MANUAL)
+  campaign        EmailCampaign   @relation(fields: [campaignId], references: [id])
+  lead            Lead            @relation(fields: [leadId], references: [id])
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  GeneratedEmail  GeneratedEmail?
 
   @@index([tenantId, status])
 }
@@ -247,7 +253,7 @@ model EmailLog {
 model BulkEmailJob {
   id              String             @id @default(uuid())
   tenantId        String
-  templateId      String
+  templateId      String?
   campaignId      String?
   rateLimit       Int
   status          BulkEmailJobStatus @default(QUEUED)
@@ -259,7 +265,7 @@ model BulkEmailJob {
   completedAt     DateTime?
   lastProcessedAt DateTime?
   campaign        EmailCampaign?     @relation(fields: [campaignId], references: [id])
-  template        EmailTemplate      @relation(fields: [templateId], references: [id])
+  template        EmailTemplate?     @relation(fields: [templateId], references: [id], onDelete: Restrict)
   tenant          Tenant             @relation(fields: [tenantId], references: [id])
   jobLeads        BulkEmailJobLead[]
 
@@ -293,6 +299,7 @@ model LeadGenerationJob {
   totalRequested Int
   generatedCount Int       @default(0)
   urls           String[]  @default([])
+  Lead           Lead[]
   tenant         Tenant    @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, status])
@@ -453,6 +460,16 @@ model WaitListMembers {
   created_at      DateTime @default(now()) @db.Timestamptz(6)
 }
 
+model GeneratedEmail {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  emailLogId    String    @unique
+  subject       String
+  content       String
+  createdAt     DateTime  @default(now()) @db.Timestamp(6)
+  scheduledDate DateTime? @db.Timestamp(6)
+  EmailLog      EmailLog  @relation(fields: [emailLogId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
 enum PlanType {
   FREE
   PRO
@@ -589,4 +606,10 @@ enum SalesGoal {
   AUTOMATE_PROCESS
   BETTER_TRACKING
   TEAM_COLLABORATION
+}
+
+enum EmailType {
+  MANUAL
+  AI_GENERATED
+  TEMPLATE
 }
