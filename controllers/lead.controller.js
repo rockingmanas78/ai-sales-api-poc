@@ -1,18 +1,29 @@
 // controllers/leadController.js
-import { PrismaClient } from '@prisma/client';
-import { parseCSVToJson } from '../services/csv.service.js';
-import { bulkUploadLeads } from '../services/leadUpload.service.js';
+import { PrismaClient } from "@prisma/client";
+import { parseCSVToJson } from "../services/csv.service.js";
+import { bulkUploadLeads } from "../services/leadUpload.service.js";
 
 const prisma = new PrismaClient();
 
 // CREATE Lead
 export const createLead = async (req, res) => {
   try {
-    const { tenantId, companyName, contactEmail, contactPhone, contactName, confidence, metadata } = req.body;
+    const {
+      tenantId,
+      companyName,
+      contactEmail,
+      contactPhone,
+      contactName,
+      confidence,
+      metadata,
+    } = req.body;
 
     // Validate required fields
     if (!tenantId || !companyName || !contactEmail || !contactName) {
-      return res.status(400).json({ error: 'tenantId, companyName, contactEmail, and contactName are required' });
+      return res.status(400).json({
+        error:
+          "tenantId, companyName, contactEmail, and contactName are required",
+      });
     }
 
     // Validate tenant exists and is not soft deleted
@@ -24,7 +35,9 @@ export const createLead = async (req, res) => {
     });
 
     if (!tenantExists) {
-      return res.status(404).json({ error: 'Tenant not found or has been deleted' });
+      return res
+        .status(404)
+        .json({ error: "Tenant not found or has been deleted" });
     }
 
     // Create new lead
@@ -42,17 +55,20 @@ export const createLead = async (req, res) => {
 
     res.status(201).json(newLead);
   } catch (error) {
-    console.error('Error creating lead:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error creating lead:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
+
 // GET All Leads for a Tenant (Only non-deleted)
 export const getTenantLeads = async (req, res) => {
   try {
     const { tenantId } = req.params;
 
     if (!tenantId) {
-      return res.status(400).json({ error: 'tenantId is required in request params' });
+      return res
+        .status(400)
+        .json({ error: "tenantId is required in request params" });
     }
 
     const leads = await prisma.lead.findMany({
@@ -64,16 +80,44 @@ export const getTenantLeads = async (req, res) => {
 
     res.json(leads);
   } catch (error) {
-    console.error('Error fetching leads:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error fetching leads:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
+// GET All Leads for a JobId
+export const getLeadsByJobId = async (req, res) => {
+  try {
+    const { jobId } = req.params;
 
+    if (!jobId) {
+      return res.status(400).json({ error: "Job ID is required." });
+    }
+
+    const job = await prisma.leadGenerationJob.findUnique({
+      // Use findUnique to get a single job
+      where: {
+        id: jobId,
+      },
+      include: {
+        Lead: true, // <-- Corrected: 'Lead' instead of 'leads'
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: "Job not found." });
+    }
+
+    res.status(200).json(job.Lead); // Send the list of leads
+  } catch (error) {
+    console.error("Error fetching leads by job ID:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
 // GET Lead by ID (Only if it belongs to tenant and is not deleted)
 export const getLeadById = async (req, res) => {
   try {
     const { leadId } = req.params;
-    const  tenantId  = req.query.tenantId;
+    const tenantId = req.query.tenantId;
 
     const lead = await prisma.lead.findFirst({
       where: {
@@ -84,20 +128,24 @@ export const getLeadById = async (req, res) => {
     });
 
     if (!lead) {
-      return res.status(404).json({ error: 'Lead not found or does not belong to tenant' });
+      return res
+        .status(404)
+        .json({ error: "Lead not found or does not belong to tenant" });
     }
 
     res.json(lead);
   } catch (error) {
-    console.error('Error fetching lead:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error fetching lead:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 export const getDashboardLeads = async (req, res) => {
   try {
-    const  tenantId  = req.query.tenantId;
+    const tenantId = req.query.tenantId;
     if (!tenantId) {
-      return res.status(400).json({ error: 'tenantId is required in request body' });
+      return res
+        .status(400)
+        .json({ error: "tenantId is required in request body" });
     }
 
     // Fetch leads filtered by status (interested, follow_up, high priority) and soft-deleted excluded
@@ -105,12 +153,12 @@ export const getDashboardLeads = async (req, res) => {
       where: {
         tenantId,
         status: {
-          in: ['INTERESTED', 'FOLLOW_UP', 'IMMEDIATE_ACTION'],
+          in: ["INTERESTED", "FOLLOW_UP", "IMMEDIATE_ACTION"],
         },
         deletedAt: null,
       },
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
       // take: 5,
       // select: {
@@ -123,9 +171,13 @@ export const getDashboardLeads = async (req, res) => {
     });
 
     // Calculate counts
-    const interestedCount = leads.filter(l => l.status === 'INTERESTED').length;
-    const followUpCount = leads.filter(l => l.status === 'FOLLOW_UP').length;
-    const highPriorityCount = leads.filter(l => l.status === 'IMMEDIATE_ACTION').length;
+    const interestedCount = leads.filter(
+      (l) => l.status === "INTERESTED"
+    ).length;
+    const followUpCount = leads.filter((l) => l.status === "FOLLOW_UP").length;
+    const highPriorityCount = leads.filter(
+      (l) => l.status === "IMMEDIATE_ACTION"
+    ).length;
 
     res.json({
       leads,
@@ -136,8 +188,8 @@ export const getDashboardLeads = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching dashboard leads:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error fetching dashboard leads:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 // UPDATE Lead (Only if belongs to tenant and not deleted)
@@ -155,7 +207,9 @@ export const updateLead = async (req, res) => {
     });
 
     if (!existingLead) {
-      return res.status(404).json({ error: 'Lead not found or does not belong to tenant' });
+      return res
+        .status(404)
+        .json({ error: "Lead not found or does not belong to tenant" });
     }
 
     const updatedLead = await prisma.lead.update({
@@ -165,8 +219,8 @@ export const updateLead = async (req, res) => {
 
     res.json(updatedLead);
   } catch (error) {
-    console.error('Error updating lead:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error updating lead:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -185,7 +239,9 @@ export const deleteLead = async (req, res) => {
     });
 
     if (!existingLead) {
-      return res.status(404).json({ error: 'Lead not found or does not belong to tenant' });
+      return res
+        .status(404)
+        .json({ error: "Lead not found or does not belong to tenant" });
     }
 
     await prisma.lead.update({
@@ -193,10 +249,10 @@ export const deleteLead = async (req, res) => {
       data: { deletedAt: new Date() },
     });
 
-    res.json({ message: 'Lead soft-deleted successfully' });
+    res.json({ message: "Lead soft-deleted successfully" });
   } catch (error) {
-    console.error('Error deleting lead:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error deleting lead:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -215,7 +271,9 @@ export const updateLeadStatus = async (req, res) => {
     });
 
     if (!existingLead) {
-      return res.status(404).json({ error: 'Lead not found or does not belong to tenant' });
+      return res
+        .status(404)
+        .json({ error: "Lead not found or does not belong to tenant" });
     }
 
     const updatedLead = await prisma.lead.update({
@@ -225,8 +283,8 @@ export const updateLeadStatus = async (req, res) => {
 
     res.json(updatedLead);
   } catch (error) {
-    console.error('Error updating lead status:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error updating lead status:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 // BULK SOFT DELETE Leads
@@ -235,7 +293,9 @@ export const bulkDeleteLeads = async (req, res) => {
     const { tenantId, leadIds } = req.body;
 
     if (!tenantId || !Array.isArray(leadIds) || leadIds.length === 0) {
-      return res.status(400).json({ error: 'tenantId and leadIds[] are required' });
+      return res
+        .status(400)
+        .json({ error: "tenantId and leadIds[] are required" });
     }
 
     // Validate ownership of all leads
@@ -247,9 +307,13 @@ export const bulkDeleteLeads = async (req, res) => {
       select: { id: true, tenantId: true },
     });
 
-    const unauthorizedLeads = leads.filter(lead => lead.tenantId !== tenantId);
+    const unauthorizedLeads = leads.filter(
+      (lead) => lead.tenantId !== tenantId
+    );
     if (unauthorizedLeads.length > 0) {
-      return res.status(403).json({ error: 'One or more leads do not belong to the tenant' });
+      return res
+        .status(403)
+        .json({ error: "One or more leads do not belong to the tenant" });
     }
 
     // Proceed with soft-deleting authorized leads
@@ -264,20 +328,29 @@ export const bulkDeleteLeads = async (req, res) => {
       },
     });
 
-    res.json({ message: 'Leads soft-deleted successfully', count: result.count });
+    res.json({
+      message: "Leads soft-deleted successfully",
+      count: result.count,
+    });
   } catch (error) {
-    console.error('Error in bulk delete:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error in bulk delete:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
-  
 
 export const bulkUpdateLeadStatus = async (req, res) => {
   try {
     const { tenantId, leadIds, status } = req.body;
 
-    if (!tenantId || !Array.isArray(leadIds) || leadIds.length === 0 || !status) {
-      return res.status(400).json({ error: 'tenantId, leadIds[], and status are required' });
+    if (
+      !tenantId ||
+      !Array.isArray(leadIds) ||
+      leadIds.length === 0 ||
+      !status
+    ) {
+      return res
+        .status(400)
+        .json({ error: "tenantId, leadIds[], and status are required" });
     }
 
     // Validate ownership
@@ -289,9 +362,13 @@ export const bulkUpdateLeadStatus = async (req, res) => {
       select: { id: true, tenantId: true },
     });
 
-    const unauthorizedLeads = leads.filter(lead => lead.tenantId !== tenantId);
+    const unauthorizedLeads = leads.filter(
+      (lead) => lead.tenantId !== tenantId
+    );
     if (unauthorizedLeads.length > 0) {
-      return res.status(403).json({ error: 'One or more leads do not belong to the tenant' });
+      return res
+        .status(403)
+        .json({ error: "One or more leads do not belong to the tenant" });
     }
 
     // Proceed with update
@@ -306,10 +383,13 @@ export const bulkUpdateLeadStatus = async (req, res) => {
       },
     });
 
-    res.json({ message: `Lead statuses updated to ${status}`, count: result.count });
+    res.json({
+      message: `Lead statuses updated to ${status}`,
+      count: result.count,
+    });
   } catch (error) {
-    console.error('Error in bulk status update:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error in bulk status update:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -317,12 +397,12 @@ export const uploadLeadsFromCSV = async (req, res) => {
   try {
     const tenantId = req.user?.tenantId;
     if (!tenantId) {
-      return res.status(400).json({ error: 'Missing tenantId in token' });
+      return res.status(400).json({ error: "Missing tenantId in token" });
     }
 
     const file = req.file;
     if (!file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+      return res.status(400).json({ error: "No file uploaded" });
     }
 
     const filePath = file.path;
@@ -331,9 +411,9 @@ export const uploadLeadsFromCSV = async (req, res) => {
 
     const result = await bulkUploadLeads(leadsJson, tenantId); // Upload JSON to DB
 
-    res.status(200).json({ message: 'Leads uploaded successfully', result });
+    res.status(200).json({ message: "Leads uploaded successfully", result });
   } catch (error) {
-    console.error('Error uploading leads:', error);
-    res.status(500).json({ error: 'Failed to upload leads from CSV' });
+    console.error("Error uploading leads:", error);
+    res.status(500).json({ error: "Failed to upload leads from CSV" });
   }
 };
