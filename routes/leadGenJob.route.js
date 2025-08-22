@@ -7,13 +7,11 @@ import {
 const router = Router();
 import verifyToken from "../middlewares/verifyToken.js";
 import authorize from "../middlewares/rbac.js";
-import { checkUsageLimit } from "../middlewares/usage.js";
 
 // POST /api/lead-jobs/search_and_extract
 router.post(
   "/search_and_extract",
   verifyToken(),
-  checkUsageLimit("JOB"),
   authorize("manage_leads"),
   searchAndExtract
 );
