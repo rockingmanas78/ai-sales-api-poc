@@ -442,6 +442,8 @@ export async function inboundWebhook(req, res, next) {
       });
     }
 
+    console.log("Conversation", conversation);
+
     // 6) Idempotent persist inbound EmailMessage by (tenantId, providerMessageId)
     const providerMessageId = evt.providerMessageId || evt.s3?.objectKey;
     if (!providerMessageId) return res.status(400).json({ error: "no providerMessageId" });
@@ -484,6 +486,7 @@ export async function inboundWebhook(req, res, next) {
 
     // 7) Flip originating EmailLog to REPLIED
     if (emailLog) {
+      console.log("Creating email log");
       await prisma.emailLog.update({
         where: { id: emailLog.id },
         data: { status: "REPLIED", repliedAt: new Date() }
@@ -493,7 +496,10 @@ export async function inboundWebhook(req, res, next) {
     console.log("Done");
 
     return res.json({ ok: true, tenantId, conversationId: conversation.id, emailLogId: emailLog?.id || null });
-  } catch (e) { next(e); }
+  } catch (e) {
+    console.log("Error in webhook", e)
+    next(e); 
+  }
 }
 
 
