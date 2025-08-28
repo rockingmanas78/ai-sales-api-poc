@@ -321,5 +321,5 @@ export async function processInbound(evt) {
 
     console.log("Done");
 
-    return res.json({ ok: true, tenantId, conversationId: conversation.id, emailLogId: emailLog?.id || null });
+    return { ok: true, tenantId, conversationId: conversation.id, emailLogId: emailLog?.id || null };
 }
