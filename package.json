@@ -24,14 +24,17 @@
     "csvtojson": "^2.0.10",
     "date-fns": "^4.1.0",
     "dotenv": "^16.5.0",
+    "email-reply-parser": "^2.0.1",
     "express": "^5.1.0",
     "google-auth-library": "^9.15.1",
     "ipinfo": "^1.5.2",
     "jsonwebtoken": "^9.0.2",
+    "mailparser": "^3.7.4",
     "multer": "^2.0.2",
     "mustache": "^4.2.0",
     "nodemailer": "^7.0.3",
-    "pg-sdk-node": "^2.0.2"
+    "pg-sdk-node": "^2.0.2",
+    "sns-validator": "^0.3.5"
   },
   "devDependencies": {
     "nodemon": "^3.0.3",

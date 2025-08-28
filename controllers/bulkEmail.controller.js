@@ -258,7 +258,7 @@ export async function processNextBatch() {
 
       const renderedSubject = mustache.render(job.template.subject, vars);
       const renderedHtml    = mustache.render(job.template.body,    vars);
-      const toEmail         = vars.email;
+      const toEmail         = vars.email; // if there are multiple emails, send all of them
 
       try {
         await sendEmail({

@@ -79,26 +79,51 @@ export async function getIdentityVerificationAttributes(identities) {
   return res.VerificationAttributes;
 }
 
+// export async function sendEmail({
+//   fromEmail,
+//   toEmail,
+//   subject,
+//   htmlBody,
+//   configurationSetName
+// }) {
+//   const cmd = new SendEmailCommand({
+//     Source: fromEmail,                       // ← now dynamic
+//     Destination: { ToAddresses: [toEmail] },
+//     Message: {
+//       Subject: { Data: subject, Charset: "UTF-8" },
+//       Body:    { Html:   { Data: htmlBody, Charset: "UTF-8" } }
+//     },
+//     ...(configurationSetName && { ConfigurationSetName: configurationSetName })
+//   });
+
+//   let res = await ses.send(cmd);
+//   return res;
+// }
+// services/ses.service.js
 export async function sendEmail({
   fromEmail,
   toEmail,
   subject,
   htmlBody,
-  configurationSetName
+  configurationSetName,
+  replyToAddresses = [],
+  messageTags = []
 }) {
   const cmd = new SendEmailCommand({
-    Source: fromEmail,                       // ← now dynamic
+    Source: fromEmail,
     Destination: { ToAddresses: [toEmail] },
     Message: {
       Subject: { Data: subject, Charset: "UTF-8" },
       Body:    { Html:   { Data: htmlBody, Charset: "UTF-8" } }
     },
-    ...(configurationSetName && { ConfigurationSetName: configurationSetName })
+    ReplyToAddresses: replyToAddresses,      // ← SES classic supports this
+    ConfigurationSetName: configurationSetName, // ← ensures events flow to your SNS destination
+    Tags: messageTags                        // ← Message tags
   });
-
-  let res = await ses.send(cmd);
-  return res;
+  return await ses.send(cmd);
 }
+
+
 export async function initiateSubdomainIdentity(subDomain, prefix) {
   // 1) Verify domain (TXT)
   const verifyCmd = new VerifyDomainIdentityCommand({ Domain: subDomain });

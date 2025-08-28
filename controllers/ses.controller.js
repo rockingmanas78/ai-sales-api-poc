@@ -164,28 +164,104 @@ export async function listIdentities(req, res, next) {
 }
 
 // POST /ses/send-email
+// export async function sendTrackedEmail(req, res, next) {
+//   try {
+//     const { fromEmail, toEmail, subject, htmlBody, configurationSetName } = req.body;
+//     if (!toEmail || !subject || !htmlBody
+//       // || !configurationSetName
+//     )
+//       return res.status(400).json({
+//         error: 'toEmail, subject, htmlBody, and configurationSetName are required'
+//       });
+
+//     const result = await sesSendEmail({
+//       fromEmail,
+//       toEmail,
+//       subject,
+//       htmlBody,
+//       configurationSetName
+//     });
+//     return res.json({ message: 'Email sent', messageId: result.MessageId });
+//   } catch (err) {
+//     next(err);
+//   }
+// }
+// controllers/ses.controller.js
 export async function sendTrackedEmail(req, res, next) {
   try {
+    const tenantId = req.user?.tenantId;
     const { fromEmail, toEmail, subject, htmlBody, configurationSetName } = req.body;
-    if (!toEmail || !subject || !htmlBody
-      // || !configurationSetName
-    )
-      return res.status(400).json({
-        error: 'toEmail, subject, htmlBody, and configurationSetName are required'
-      });
 
+    if (!tenantId || !fromEmail || !toEmail || !subject || !htmlBody || !configurationSetName) {
+      return res.status(400).json({
+        error: "tenantId, fromEmail, toEmail, subject, htmlBody, configurationSetName are required"
+      });
+    }
+
+    // 1) Pre-create the EmailLog to get a stable token (id)
+    const emailLog = await prisma.emailLog.create({
+      data: {
+        tenantId,
+        campaignId: null,
+        leadId: null,
+        status: "QUEUED",
+        senderEmail: fromEmail,
+        recipientEmails: [toEmail],
+        subject,
+        content: htmlBody,
+        createdAt: new Date()
+      }
+    });
+
+    // 2) Resolve tenant inbound subdomain
+    const inbound = await prisma.domainIdentity.findFirst({
+      where: { tenantId, domainName: { startsWith: "inbound." }, verificationStatus: "Success" },
+      select: { domainName: true }
+    });
+    if (!inbound) {
+      return res.status(400).json({ error: "Inbound subdomain not verified for this tenant" });
+    }
+
+    // 3) Build Reply-To using plus-addressing (RFC 5233)
+    const replyTo = `reply+${emailLog.id}@${inbound.domainName}`;
+
+    // 4) Send with configuration set, Reply-To, and tags
     const result = await sesSendEmail({
       fromEmail,
       toEmail,
       subject,
       htmlBody,
-      configurationSetName
+      configurationSetName,
+      replyToAddresses: [replyTo],
+      messageTags: [
+        { Name: "tenantId", Value: tenantId },
+        { Name: "emailLogId", Value: emailLog.id }
+      ]
     });
-    return res.json({ message: 'Email sent', messageId: result.MessageId });
+
+    // 5) Persist SES ids and mark SENT
+    await prisma.emailLog.update({
+      where: { id: emailLog.id },
+      data: {
+        status: "SENT",
+        sentAt: new Date(),
+        providerMessageId: result.MessageId,  // SES classic message id
+        outboundMessageId: result.MessageId,
+        replyToToken: emailLog.id
+      }
+    });
+
+    return res.json({
+      message: "Email sent",
+      messageId: result.MessageId,
+      emailLogId: emailLog.id,
+      replyTo
+    });
   } catch (err) {
     next(err);
   }
 }
+
 
 // POST /ses/onboard-subdomain
 export async function onboardSubdomain(req, res, next) {
@@ -275,17 +351,151 @@ export async function checkSubdomainStatus(req, res, next) {
   }
 }
 
+// export async function inboundWebhook(req, res, next) {
+//   try {
+//     if (req.headers['x-internal-secret'] !== process.env.WEBHOOK_SECRET)
+//       return res.status(401).json({ error: 'unauthorised' });
+
+//     console.log(req.body);
+
+//     //await processInbound(req.body);
+//     res.json({ status: 'ok' });
+//   } catch (e) { next(e); }
+// }
+// controllers/ses.controller.js
 export async function inboundWebhook(req, res, next) {
   try {
-    if (req.headers['x-internal-secret'] !== process.env.WEBHOOK_SECRET)
-      return res.status(401).json({ error: 'unauthorised' });
+    if (req.headers["x-internal-secret"] !== process.env.WEBHOOK_SECRET) {
+      return res.status(401).json({ error: "unauthorised" });
+    }
 
-    console.log(req.body);
+    const evt = req.body;
 
-    //await processInbound(req.body);
-    res.json({ status: 'ok' });
+    console.log("Event", evt);
+    // evt carries: providerMessageId, subject, from[], to[], replyText, fullText, html,
+    // headers, verdicts{spf,dkim,dmarc}, s3{bucket,objectKey}, inReplyTo, references
+
+    // 1) Resolve tenant by inbound domain
+    const recipientDomain = (evt.to?.[0] || "").split("@")[1] || null;
+    if (!recipientDomain) return res.status(400).json({ error: "no recipient domain" });
+
+    const domain = await prisma.domainIdentity.findFirst({
+      where: { domainName: recipientDomain, verificationStatus: "Success" },
+      select: { tenantId: true }
+    });
+    if (!domain) return res.status(400).json({ error: "unknown inbound domain" });
+
+    console.log("Domain",domain);
+    const tenantId = domain.tenantId;
+
+    // 2) Extract plus-token from any of the recipient addresses (reply+<token>@...)
+    const plusToken = (() => {
+      for (const addr of evt.to || []) {
+        const local = addr.split("@")[0] || "";
+        const p = local.indexOf("+");
+        if (p > -1) return local.slice(p + 1);
+      }
+      return null;
+    })();
+
+    // 3) Try to locate the originating EmailLog (plus-token first, RFC header next)
+    let emailLog = null;
+    if (plusToken) {
+      emailLog = await prisma.emailLog.findFirst({ where: { tenantId, id: plusToken } });
+    }
+    if (!emailLog && evt.inReplyTo) {
+      emailLog = await prisma.emailLog.findFirst({ where: { tenantId, outboundMessageId: evt.inReplyTo } });
+    }
+
+    console.log("Email log", emailLog);
+
+    // 4) Compute threadKey: In-Reply-To (or last reference) -> plusToken -> fallback
+    const refTail =
+      Array.isArray(evt.references) && evt.references.length
+        ? evt.references[evt.references.length - 1]
+        : (typeof evt.references === "string" ? evt.references : null);
+
+    const threadKey = evt.inReplyTo || refTail || plusToken || (evt.subject ? `subj:${evt.subject}` : `msg:${evt.providerMessageId}`);
+    console.log("Thread key", threadKey);
+
+    // 5) Upsert/find Conversation
+    let conversation = await prisma.conversation.findFirst({
+      where: { tenantId, threadKey }
+    });
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: {
+          tenantId,
+          threadKey,
+          subject: evt.subject || null,
+          participants: Array.from(new Set([...(evt.from || []), ...(evt.to || [])])),
+        }
+      });
+    } else {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          subject: conversation.subject ?? evt.subject ?? null,
+          participants: Array.from(new Set([...(conversation.participants || []), ...(evt.from || []), ...(evt.to || [])])),
+          lastMessageAt: new Date()
+        }
+      });
+    }
+
+    // 6) Idempotent persist inbound EmailMessage by (tenantId, providerMessageId)
+    const providerMessageId = evt.providerMessageId || evt.s3?.objectKey;
+    if (!providerMessageId) return res.status(400).json({ error: "no providerMessageId" });
+
+    const existing = await prisma.emailMessage.findFirst({
+      where: { tenantId, providerMessageId }
+    });
+
+    if (!existing) {
+      console.log("not existing");
+      await prisma.emailMessage.create({
+        data: {
+          tenantId,
+          conversationId: conversation.id,
+          direction: "INBOUND",
+          provider: "AWS_SES",
+          providerMessageId,
+          subject: evt.subject || null,
+          from: evt.from || [],
+          to: evt.to || [],
+          cc: [],
+          bcc: [],
+          text: evt.replyText || evt.fullText || null,
+          html: evt.html || null,
+          headers: evt.headers || {},
+          verdicts: evt.verdicts || {},
+          inReplyTo: evt.inReplyTo || null,
+          referencesIds: Array.isArray(evt.references) ? evt.references : (evt.references ? [evt.references] : []),
+          plusToken: plusToken || null,
+          s3Bucket: evt.s3?.bucket || null,
+          s3Key: evt.s3?.objectKey || null,
+          receivedAt: new Date(),
+          // Optionally link back
+          campaignId: emailLog?.campaignId || null,
+          leadId: emailLog?.leadId || null,
+          emailLogId: emailLog?.id || null
+        }
+      });
+    }
+
+    // 7) Flip originating EmailLog to REPLIED
+    if (emailLog) {
+      await prisma.emailLog.update({
+        where: { id: emailLog.id },
+        data: { status: "REPLIED", repliedAt: new Date() }
+      });
+    }
+
+    console.log("Done");
+
+    return res.json({ ok: true, tenantId, conversationId: conversation.id, emailLogId: emailLog?.id || null });
   } catch (e) { next(e); }
 }
+
 
 
 /*
