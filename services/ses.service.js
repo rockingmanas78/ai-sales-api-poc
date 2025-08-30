@@ -203,13 +203,13 @@ export async function processInbound(evt) {
 
     // 1) Resolve tenant by inbound domain
     const recipientDomain = (evt.to?.[0] || "").split("@")[1] || null;
-    if (!recipientDomain) return res.status(400).json({ error: "no recipient domain" });
+    if (!recipientDomain) return { error: "no recipient domain" };
 
     const domain = await prisma.domainIdentity.findFirst({
       where: { domainName: recipientDomain, verificationStatus: "Success" },
       select: { tenantId: true }
     });
-    if (!domain) return res.status(400).json({ error: "unknown inbound domain" });
+    if (!domain) return { error: "unknown inbound domain" };
 
     console.log("Domain",domain);
     const tenantId = domain.tenantId;
@@ -272,7 +272,7 @@ export async function processInbound(evt) {
 
     // 6) Idempotent persist inbound EmailMessage by (tenantId, providerMessageId)
     const providerMessageId = evt.providerMessageId || evt.s3?.objectKey;
-    if (!providerMessageId) return res.status(400).json({ error: "no providerMessageId" });
+    if (!providerMessageId) return { error: "no providerMessageId" };
 
     const existing = await prisma.emailMessage.findFirst({
       where: { tenantId, providerMessageId }
