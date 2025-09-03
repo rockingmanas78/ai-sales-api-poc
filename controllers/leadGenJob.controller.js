@@ -6,8 +6,11 @@ import { AI_SERVICE_ENDPOINT } from "../constants/endpoints.constants.js";
 
 export const searchAndExtract = async (req, res) => {
   try {
+    console.log("search and extract!");
     const { tenantId } = req.user;
     const { prompt, num_results = 1, offset = 0 } = req.body;
+
+    console.log("Body", req.body);
 
     if (!prompt) {
       return res.status(400).json({ error: "Prompt is required" });
@@ -18,9 +21,10 @@ export const searchAndExtract = async (req, res) => {
       return res.status(401).json({ error: "Missing Authorization header" });
     }
 
+    console.log("Endpoint", `${AI_SERVICE_ENDPOINT}/api/extract/search`);
     // AI service ko call karein
     const { data } = await axios.post(
-      `${AI_SERVICE_ENDPOINT}/extract/search`,
+      `${AI_SERVICE_ENDPOINT}/api/extract/search`,
       { prompt, num_results, offset },
       {
         headers: {
@@ -33,14 +37,15 @@ export const searchAndExtract = async (req, res) => {
 
     return res.status(200).json(data);
   } catch (err) {
-    console.log("err", err);
-    console.error("searchAndExtract error:", err.response?.data || err.message);
+    console.log("err", err.response.data);
+    // console.error("searchAndExtract error:", err.response?.data || err.message);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
 
 export const getSearchJobStatus = async (req, res) => {
   try {
+
     const { tenantId, job_id } = req.query;
     if (!tenantId || !job_id) {
       return res
@@ -61,7 +66,7 @@ export const getSearchJobStatus = async (req, res) => {
     }
 
     // 3. Fetch the job status/results from the AI service
-    const statusUrl = `${AI_SERVICE_ENDPOINT}/extract/get_job_update?job_id=${job_id}`;
+    const statusUrl = `${AI_SERVICE_ENDPOINT}/api/extract/get_job_update?job_id=${job_id}`;
     console.log(statusUrl);
     const { data } = await axios.get(statusUrl, {
       headers: {

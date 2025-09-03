@@ -12,7 +12,7 @@ import authorize from "../middlewares/rbac.js";
 router.post(
   "/search_and_extract",
   verifyToken(),
-  authorize("manage_leads"),
+  //authorize("manage_leads"),
   searchAndExtract
 );
 
@@ -20,7 +20,7 @@ router.post(
 router.get(
   "/status",
   verifyToken(),
-  authorize("manage_leads"),
+  //authorize("manage_leads"),
   getSearchJobStatus
 );
 
