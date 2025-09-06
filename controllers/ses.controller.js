@@ -267,7 +267,8 @@ export async function sendTrackedEmail(req, res, next) {
     }
 
     // 3) Build Reply-To using plus-addressing (RFC 5233)
-    const replyTo = `reply+${emailLog.id}@${inbound.domainName}`;
+    const replyToToken = emailLog.id;
+    const replyTo = `reply+${replyToToken}@${inbound.domainName}`;
     console.log("Build Reply-To", replyTo);
 
     // 4) Send with configuration set, Reply-To, and tags
@@ -285,17 +286,66 @@ export async function sendTrackedEmail(req, res, next) {
     });
     console.log("email sent", result);
 
-    // 5) Persist SES ids and mark SENT
-    await prisma.emailLog.update({
-      where: { id: emailLog.id },
-      data: {
-        status: "SENT",
-        sentAt: new Date(),
-        providerMessageId: result.MessageId, // SES classic message id
-        outboundMessageId: result.MessageId,
-        replyToToken: emailLog.id,
-      },
-    });
+    // 5) Persist everything atomically (fast DB-only TX)
+     //    - upsert Conversation by (tenantId, threadKey)
+     //    - create OUTBOUND EmailMessage idempotently
+     //    - mark EmailLog SENT (  set providerMessageId / replyToToken)
+     await prisma.$transaction(async (transaction) => {
+       const threadKey = replyToToken;
+       const conversation = await transaction.conversation.upsert({
+         where: { tenantId_threadKey: { tenantId, threadKey } },
+         create: {
+           tenantId,
+           threadKey,
+           subject,
+           participants: [fromEmail, toEmail],
+         },
+         update: {
+           subject: { set: subject ?? undefined },
+           participants: {
+             set: Array.from(new Set([fromEmail, toEmail, ...(/* keep old */ (await transaction.conversation.findUnique({
+               where: { tenantId_threadKey: { tenantId, threadKey } },
+               select: { participants: true }
+             }))?.participants ?? [])]))
+           },
+           lastMessageAt: new Date()
+         }
+       });
+ 
+       await transaction.emailMessage.upsert({
+         where: { tenantId_providerMessageId: { tenantId, providerMessageId: result.MessageId } },
+         create: {
+           tenantId,
+           conversationId: conversation.id,
+           direction: "OUTBOUND",
+           provider: "AWS_SES",
+           providerMessageId: result.MessageId,
+           subject,
+           from: [fromEmail],
+           to: [toEmail],
+           html: htmlBody,
+           headers: { "Reply-To": replyTo },
+           verdicts: {},
+           plusToken: replyToToken,
+           sentAt: new Date(),
+           campaignId,
+           leadId,
+           emailLogId: emailLog.id,
+         },
+         update: {} // idempotent
+       });
+ 
+       await transaction.emailLog.update({
+         where: { id: emailLog.id },
+         data: {
+           status: "SENT",
+           sentAt: new Date(),
+           providerMessageId: result.MessageId,
+           outboundMessageId: result.MessageId,
+           replyToToken: replyToToken,
+         },
+       });
+     }, { timeout: 15_000 }); // keep tight; bump if needed per Prisma docs
 
     return res.json({
       message: "Email sent",
@@ -401,18 +451,6 @@ export async function checkSubdomainStatus(req, res, next) {
   }
 }
 
-// export async function inboundWebhook(req, res, next) {
-//   try {
-//     if (req.headers['x-internal-secret'] !== process.env.WEBHOOK_SECRET)
-//       return res.status(401).json({ error: 'unauthorised' });
-
-//     console.log(req.body);
-
-//     //await processInbound(req.body);
-//     res.json({ status: 'ok' });
-//   } catch (e) { next(e); }
-// }
-
 export async function inboundWebhook(req, res, next) {
   try {
     if (req.headers["x-internal-secret"] !== process.env.WEBHOOK_SECRET) {
@@ -438,7 +476,3 @@ export async function inboundWebhook(req, res, next) {
     } catch {}
   }
 }
-
-/*
-[{"ttl": 1800, "Name": "pfos6uc2xytbd42q3k35hcb5npmnfkp5._domainkey.productimate.io", "type": "CNAME", "value": "pfos6uc2xytbd42q3k35hcb5npmnfkp5.dkim.amazonses.com"}, {"ttl": 1800, "Name": "nfbn7mbrelfttbf4ngcaaphsmbqxernd._domainkey.productimate.io", "type": "CNAME", "value": "nfbn7mbrelfttbf4ngcaaphsmbqxernd.dkim.amazonses.com"}, {"ttl": 1800, "Name": "yh7bp6xueooucz5uvo2txjal7wy6up4k._domainkey.productimate.io", "type": "CNAME", "value": "yh7bp6xueooucz5uvo2txjal7wy6up4k.dkim.amazonses.com"}, {"ttl": 1800, "Name": "_dmarc.productimate.io", "type": "TXT", "value": "v=DMARC1; p=none;"}, {"ttl": 1800, "name": "productimate.io", "type": "TXT", "value": "v=spf1 include:amazonses.com ~all"}, {"ttl": 1800, "name": "_amazonses.productimate.io", "type": "TXT", "value": "Z6qwpwuf8d/KxsQW38cvPXCLumCYcRC1gpFmYQrfumE="}]
-*/

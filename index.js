@@ -27,9 +27,10 @@ import websiteRoutes from './routes/websiteContent.route.js';
 import bulkSnippetRoutes from './routes/bulkSnippet.routes.js';
 import waitListRouter from './routes/waitList.route.js';
 import feedbackRouter from './routes/feedback.route.js';
-//import { startEmailWorker } from './services/emailWorker.service.js';
+import conversationRoutes from './routes/conversation.route.js';
 import tenantOnboardingRoutes from './routes/tenantOnboarding.routes.js';
 import eventsRouter from './routes/events.route.js';
+import emailRouter from './routes/email.route.js';
 
 const app = express();
 
@@ -87,6 +88,8 @@ app.use('/api', waitListRouter);
 app.use('/api/feedback', feedbackRouter);
 app.use('/api/tenant', tenantOnboardingRoutes);
 app.use('/api/events', eventsRouter);
+app.use('/api/conversations', conversationRoutes);
+app.use('/api/email', emailRouter);
 
 // Global error handler
 app.use((err, req, res, next) => {

@@ -7,6 +7,7 @@ import {
   GetIdentityDkimAttributesCommand,
   VerifyDomainDkimCommand,
   SetIdentityDkimEnabledCommand,
+  SendRawEmailCommand,
 } from "@aws-sdk/client-ses";
 import { response } from "express";
 import prisma from "../utils/prisma.client.js";
@@ -86,26 +87,46 @@ export async function getIdentityVerificationAttributes(identities) {
   return res.VerificationAttributes;
 }
 
-// export async function sendEmail({
-//   fromEmail,
-//   toEmail,
-//   subject,
-//   htmlBody,
-//   configurationSetName
-// }) {
-//   const cmd = new SendEmailCommand({
-//     Source: fromEmail,                       // ← now dynamic
-//     Destination: { ToAddresses: [toEmail] },
-//     Message: {
-//       Subject: { Data: subject, Charset: "UTF-8" },
-//       Body:    { Html:   { Data: htmlBody, Charset: "UTF-8" } }
-//     },
-//     ...(configurationSetName && { ConfigurationSetName: configurationSetName })
-//   });
+ // Minimal MIME builder for HTML sends (adds arbitrary headers)
+ export async function sendRawEmailWithHeaders({
+   fromEmail,
+   toEmail,
+   subject,
+   htmlBody,
+   replyTo,                     // single addr
+   extraHeaders = {},           // e.g., { "In-Reply-To": "<...>", "References": "<...> ..." }
+   configurationSetName="identity-onboaring-for-tenants",        // optional
+   messageTags = []             // optional SES tags
+ }) {
+   // Build headers (CRLF strictly per RFC 5322)
+   const baseHeaders = {
+     From: fromEmail,
+     To: toEmail,
+     Subject: subject,
+     "MIME-Version": "1.0",
+     "Content-Type": 'text/html; charset="UTF-8"',
+     ...(replyTo ? { "Reply-To": replyTo } : {}),
+     ...extraHeaders
+   };
+   const headerLines = Object.entries(baseHeaders)
+     .filter(([, v]) => v !== undefined && v !== null)
+     .map(([k, v]) => `${k}: ${v}`);
+ 
+   const raw = [
+     ...headerLines,
+     "",                    // blank line between headers and body
+     htmlBody || ""
+   ].join("\r\n");
+ 
+   const cmd = new SendRawEmailCommand({
+     RawMessage: { Data: new TextEncoder().encode(raw) },
+     ...(configurationSetName && { ConfigurationSetName: configurationSetName }),
+     ...(messageTags.length ? { Tags: messageTags } : {})
+   });
+   // Note: SES overwrites Message-ID/Date; our threading headers remain. :contentReference[oaicite:1]{index=1}
+   return await ses.send(cmd);
+ }
 
-//   let res = await ses.send(cmd);
-//   return res;
-// }
 // services/ses.service.js
 export async function sendEmail({
   fromEmail,
@@ -298,7 +319,8 @@ export async function processInbound(evt) {
     // 3) Thread key (RFC 5322 first; fallback to plus-token; else subj)
     const refTail  = references.length ? references[references.length - 1] : null;
     const key = evt.providerMessageId || evt?.s3?.objectKey || "unknown";
-    const threadKey = inReplyTo || refTail || plusToken || (evt.subject ? `subj:${evt.subject}` : `msg:${key}`);
+    //const threadKey = inReplyTo || refTail || plusToken || (evt.subject ? `subj:${evt.subject}` : `msg:${key}`);
+    const threadKeyPreferred = plusToken || inReplyTo || refTail || (evt.subject ? `subj:${evt.subject}` : `msg:${providerMessageId}`);
 
     // Participants: deduped from and to; drop your system inbound alias
     // const participants = [...new Set(
@@ -314,238 +336,188 @@ export async function processInbound(evt) {
 
     console.log("Participants", participants);
 
-    // 4) Upsert/find Conversation
-    let conversation = await prisma.conversation.findFirst({ where: { tenantId, threadKey } });
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          tenantId,
-          threadKey,
-          subject: evt.subject || null,
-          participants
-        }
-      });
-    } else {
-      await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: {
-          subject: conversation.subject ?? evt.subject ?? null,
-          participants: [...new Set([...(conversation.participants || []), ...participants])],
-          lastMessageAt: new Date()
-        }
-      });
-    }
+    // // 4) Upsert/find Conversation
+    // let conversation = await prisma.conversation.findFirst({ where: { tenantId, threadKey } });
+    // if (!conversation) {
+    //   conversation = await prisma.conversation.create({
+    //     data: {
+    //       tenantId,
+    //       threadKey,
+    //       subject: evt.subject || null,
+    //       participants
+    //     }
+    //   });
+    // } else {
+    //   await prisma.conversation.update({
+    //     where: { id: conversation.id },
+    //     data: {
+    //       subject: conversation.subject ?? evt.subject ?? null,
+    //       participants: [...new Set([...(conversation.participants || []), ...participants])],
+    //       lastMessageAt: new Date()
+    //     }
+    //   });
+    // }
 
-    // 5) Idempotent persist inbound EmailMessage
-    // Prefer SES S3 action pointer (authoritative); else message-id header
-    const hdrMsgId = cleanMsgId(hdrs['message-id'] || hdrs['Message-ID']);
-    const providerMessageId = evt.providerMessageId || evt?.s3?.objectKey || hdrMsgId;
+    // // 5) Idempotent persist inbound EmailMessage
+    // // Prefer SES S3 action pointer (authoritative); else message-id header
+    // const hdrMsgId = cleanMsgId(hdrs['message-id'] || hdrs['Message-ID']);
+    // const providerMessageId = evt.providerMessageId || evt?.s3?.objectKey || hdrMsgId;
 
-    if (!providerMessageId) {
-      console.warn('processInbound: no providerMessageId; not creating EmailMessage');
-      return;
-    }
+    // if (!providerMessageId) {
+    //   console.warn('processInbound: no providerMessageId; not creating EmailMessage');
+    //   return;
+    // }
 
-    const exists = await prisma.emailMessage.findFirst({
-      where: { tenantId, providerMessageId }
-    });
-    if (!exists) {
-      await prisma.emailMessage.create({
-        data: {
-          tenantId,
-          conversationId: conversation.id,
-          direction: 'INBOUND',
-          provider: 'AWS_SES',
-          providerMessageId,
-          subject: evt.subject || null,
-          from: fromEmails,
-          to: toEmails,
-          cc: extractEmails(evt.cc),
-          bcc: extractEmails(evt.bcc),
-          text: evt.replyText || evt.fullText || null,
-          html: evt.html || null,
-          headers: hdrs,
-          verdicts: evt.verdicts || {},
-          inReplyTo,
-          referencesIds: references,
-          plusToken: plusToken || null,
-          s3Bucket: evt?.s3?.bucket || null,
-          s3Key: evt?.s3?.objectKey || null,
-          receivedAt: new Date(),
-          campaignId: emailLog?.campaignId || null,
-          leadId: emailLog?.leadId || null,
-          emailLogId: emailLog?.id || null
-        }
-      });
-    }
+    // const exists = await prisma.emailMessage.findFirst({
+    //   where: { tenantId, providerMessageId }
+    // });
+    // if (!exists) {
+    //   await prisma.emailMessage.create({
+    //     data: {
+    //       tenantId,
+    //       conversationId: conversation.id,
+    //       direction: 'INBOUND',
+    //       provider: 'AWS_SES',
+    //       providerMessageId,
+    //       subject: evt.subject || null,
+    //       from: fromEmails,
+    //       to: toEmails,
+    //       cc: extractEmails(evt.cc),
+    //       bcc: extractEmails(evt.bcc),
+    //       text: evt.replyText || evt.fullText || null,
+    //       html: evt.html || null,
+    //       headers: hdrs,
+    //       verdicts: evt.verdicts || {},
+    //       inReplyTo,
+    //       referencesIds: references,
+    //       plusToken: plusToken || null,
+    //       s3Bucket: evt?.s3?.bucket || null,
+    //       s3Key: evt?.s3?.objectKey || null,
+    //       receivedAt: new Date(),
+    //       campaignId: emailLog?.campaignId || null,
+    //       leadId: emailLog?.leadId || null,
+    //       emailLogId: emailLog?.id || null
+    //     }
+    //   });
+    // }
 
-    // 6) Flip originating EmailLog to REPLIED
-    if (emailLog) {
-      await prisma.emailLog.update({
-        where: { id: emailLog.id },
-        data: { status: 'REPLIED', repliedAt: new Date() }
-      });
-    }
+    // // 6) Flip originating EmailLog to REPLIED
+    // if (emailLog) {
+    //   await prisma.emailLog.update({
+    //     where: { id: emailLog.id },
+    //     data: { status: 'REPLIED', repliedAt: new Date() }
+    //   });
+    // }
+         // --- transactional, fast, idempotent DB writes only ---
+     let conversationId;  // we'll capture this for logging
+     await prisma.$transaction(async (tx) => {
+       // (a) find-by-preferred key (plusToken) OR merge an existing RFC-key convo into it
+       let conv = await tx.conversation.findUnique({
+         where: { tenantId_threadKey: { tenantId, threadKey: threadKeyPreferred } },
+         select: { id: true, participants: true }
+       });
+ 
+       if (!conv) {
+         // If we didn’t find by plusToken (or fallback), but we DO have an RFC key, try that,
+         // then migrate its key to the preferred plusToken to avoid future splits.
+         const altKey = (inReplyTo || refTail) ?? null;
+         if (altKey) {
+           const alt = await tx.conversation.findUnique({
+             where: { tenantId_threadKey: { tenantId, threadKey: altKey } },
+             select: { id: true, participants: true }
+           });
+           if (alt) {
+             // merge: move the thread to the preferred key (plusToken) as canonical
+             await tx.conversation.update({
+               where: { id: alt.id },
+               data: {
+                 threadKey: threadKeyPreferred,
+                 subject: evt.subject ?? undefined,
+                 participants: {
+                   set: Array.from(new Set([...(alt.participants || []), ...participants]))
+                 },
+                 lastMessageAt: new Date()
+               }
+             });
+             conv = { id: alt.id, participants: alt.participants };
+           }
+         }
+       }
+ 
+       // If still not found, create with the preferred key
+       if (!conv) {
+         const created = await tx.conversation.create({
+           data: {
+             tenantId,
+             threadKey: threadKeyPreferred,
+           }
+         });
+         conv = { id: created.id, participants: created.participants };
+       } else {
+         // update subject/participants if needed
+         await tx.conversation.update({
+           where: { id: conv.id },
+           data: {
+             subject: { set: (evt.subject ?? undefined) },
+             participants: { set: Array.from(new Set([...(conv.participants || []), ...participants])) },
+             lastMessageAt: new Date()
+           }
+         });
+       }
+ 
+       // (b) link originating EmailLog if present (plus-token first, then in-reply-to)
+       let linkedLog = null;
+       if (plusToken) {
+         linkedLog = await tx.emailLog.findFirst({ where: { tenantId, id: plusToken } });
+       }
+       if (!linkedLog && inReplyTo) {
+         linkedLog = await tx.emailLog.findFirst({ where: { tenantId, outboundMessageId: inReplyTo } });
 
-    console.log('processInbound: OK', { tenantId, conversationId: conversation.id, emailLogId: emailLog?.id || null });
+       }
+ 
+       // (c) create inbound EmailMessage idempotently
+       await tx.emailMessage.upsert({
+         where: { tenantId_providerMessageId: { tenantId, providerMessageId } },
+         create: {
+           tenantId,
+           conversationId: conv.id,
+           direction: 'INBOUND',
+           provider: 'AWS_SES',
+           providerMessageId,
+           subject: evt.subject || null,
+           from: fromEmails,
+           to: toEmails,
+           cc: extractEmails(evt.cc),
+           bcc: extractEmails(evt.bcc),
+           text: evt.replyText || evt.fullText || null,
+           html: evt.html || null,
+           headers: hdrs,
+           verdicts: evt.verdicts || {},
+           inReplyTo,
+           referencesIds: references,
+           plusToken: plusToken || null,
+           s3Bucket: evt?.s3?.bucket || null,
+           s3Key: evt?.s3?.objectKey || null,
+           receivedAt: new Date(),
+           campaignId: linkedLog?.campaignId || null,
+           leadId: linkedLog?.leadId || null,
+           emailLogId: linkedLog?.id || null
+         },
+         update: {} // idempotent
+       });
+ 
+       // (d) flip log → REPLIED if we found it
+       if (linkedLog && linkedLog.status !== 'REPLIED') {
+         await tx.emailLog.update({
+           where: { id: linkedLog.id },
+           data: { status: 'REPLIED', repliedAt: new Date() }
+         });
+       }
+       conversationId = conv.id;
+     }, { timeout: 15_000 });
+
+    console.log('processInbound: OK', { tenantId, conversationId, emailLogId: emailLog?.id || null });
   } catch (err) {
     console.error('processInbound failed:', err);
   }
 }
-
-// export async function processInbound(evt) {
-//   console.log("Event", evt);
-//   // evt carries: providerMessageId, subject, from[], to[], replyText, fullText, html,
-//   // headers, verdicts{spf,dkim,dmarc}, s3{bucket,objectKey}, inReplyTo, references
-
-//   // 1) Resolve tenant by inbound domain
-//   const recipientDomain = (evt.to?.[0] || "").split("@")[1] || null;
-//   if (!recipientDomain)
-//     return { error: "no recipient domain" };
-
-//   const domain = await prisma.domainIdentity.findFirst({
-//     where: { domainName: recipientDomain, verificationStatus: "Success" },
-//     select: { tenantId: true },
-//   });
-//   if (!domain) return { error: "unknown inbound domain" };
-
-//   console.log("Domain", domain);
-//   const tenantId = domain.tenantId;
-
-//   // 2) Extract plus-token from any of the recipient addresses (reply+<token>@...)
-//   const plusToken = (() => {
-//     for (const addr of evt.to || []) {
-//       const local = addr.split("@")[0] || "";
-//       const p = local.indexOf("+");
-//       if (p > -1) return local.slice(p + 1);
-//     }
-//     return null;
-//   })();
-
-//   // 3) Try to locate the originating EmailLog (plus-token first, RFC header next)
-//   let emailLog = null;
-//   if (plusToken) {
-//     emailLog = await prisma.emailLog.findFirst({
-//       where: { tenantId, id: plusToken },
-//     });
-//   }
-//   if (!emailLog && evt.inReplyTo) {
-//     emailLog = await prisma.emailLog.findFirst({
-//       where: { tenantId, outboundMessageId: evt.inReplyTo },
-//     });
-//   }
-
-//   console.log("Email log", emailLog);
-
-//   // 4) Compute threadKey: In-Reply-To (or last reference) -> plusToken -> fallback
-//   const refTail =
-//     Array.isArray(evt.references) && evt.references.length
-//       ? evt.references[evt.references.length - 1]
-//       : typeof evt.references === "string"
-//       ? evt.references
-//       : null;
-
-//   const threadKey =
-//     evt.inReplyTo ||
-//     refTail ||
-//     plusToken ||
-//     (evt.subject ? `subj:${evt.subject}` : `msg:${evt.providerMessageId}`);
-//   console.log("Thread key", threadKey);
-
-//   // 5) Upsert/find Conversation
-//   let conversation = await prisma.conversation.findFirst({
-//     where: { tenantId, threadKey },
-//   });
-//   if (!conversation) {
-//     conversation = await prisma.conversation.create({
-//       data: {
-//         tenantId,
-//         threadKey,
-//         subject: evt.subject || null,
-//         participants: Array.from(
-//           new Set([...(evt.from || []), ...(evt.to || [])])
-//         ),
-//       },
-//     });
-//   } else {
-//     await prisma.conversation.update({
-//       where: { id: conversation.id },
-//       data: {
-//         subject: conversation.subject ?? evt.subject ?? null,
-//         participants: Array.from(
-//           new Set([
-//             ...(conversation.participants || []),
-//             ...(evt.from || []),
-//             ...(evt.to || []),
-//           ])
-//         ),
-//         lastMessageAt: new Date(),
-//       },
-//     });
-//   }
-
-//   console.log("Conversation", conversation);
-
-//   // 6) Idempotent persist inbound EmailMessage by (tenantId, providerMessageId)
-//   const providerMessageId = evt.providerMessageId || evt.s3?.objectKey;
-//   if (!providerMessageId)
-//     return { error: "no providerMessageId" };
-
-//   const existing = await prisma.emailMessage.findFirst({
-//     where: { tenantId, providerMessageId },
-//   });
-
-//   if (!existing) {
-//     console.log("not existing");
-//     await prisma.emailMessage.create({
-//       data: {
-//         tenantId,
-//         conversationId: conversation.id,
-//         direction: "INBOUND",
-//         provider: "AWS_SES",
-//         providerMessageId,
-//         subject: evt.subject || null,
-//         from: evt.from || [],
-//         to: evt.to || [],
-//         cc: [],
-//         bcc: [],
-//         text: evt.replyText || evt.fullText || null,
-//         html: evt.html || null,
-//         headers: evt.headers || {},
-//         verdicts: evt.verdicts || {},
-//         inReplyTo: evt.inReplyTo || null,
-//         referencesIds: Array.isArray(evt.references)
-//           ? evt.references
-//           : evt.references
-//           ? [evt.references]
-//           : [],
-//         plusToken: plusToken || null,
-//         s3Bucket: evt.s3?.bucket || null,
-//         s3Key: evt.s3?.objectKey || null,
-//         receivedAt: new Date(),
-//         // Optionally link back
-//         campaignId: emailLog?.campaignId || null,
-//         leadId: emailLog?.leadId || null,
-//         emailLogId: emailLog?.id || null,
-//       },
-//     });
-//   }
-
-//   // 7) Flip originating EmailLog to REPLIED
-//   if (emailLog) {
-//     console.log("Creating email log");
-//     await prisma.emailLog.update({
-//       where: { id: emailLog.id },
-//       data: { status: "REPLIED", repliedAt: new Date() },
-//     });
-//   }
-
-//   console.log("Done");
-
-//   return {
-//     ok: true,
-//     tenantId,
-//     conversationId: conversation.id,
-//     emailLogId: emailLog?.id || null,
-//   };
-// }
