@@ -29,6 +29,7 @@ import waitListRouter from './routes/waitList.route.js';
 import feedbackRouter from './routes/feedback.route.js';
 //import { startEmailWorker } from './services/emailWorker.service.js';
 import tenantOnboardingRoutes from './routes/tenantOnboarding.routes.js';
+import eventsRouter from './routes/events.route.js';
 
 const app = express();
 
@@ -85,6 +86,7 @@ app.use('/api/snippets', bulkSnippetRoutes);
 app.use('/api', waitListRouter);
 app.use('/api/feedback', feedbackRouter);
 app.use('/api/tenant', tenantOnboardingRoutes);
+app.use('/api/events', eventsRouter);
 
 // Global error handler
 app.use((err, req, res, next) => {
