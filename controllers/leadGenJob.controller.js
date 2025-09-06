@@ -1,10 +1,12 @@
 import axios from "axios";
-import { PrismaClient, LeadStatus } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
+// 1. Import the recordUsage helper function
 
 const prisma = new PrismaClient();
 import { AI_SERVICE_ENDPOINT } from "../constants/endpoints.constants.js";
 
 export const searchAndExtract = async (req, res) => {
+  // The middleware has already checked the limits, now we execute and record.
   try {
     console.log("search and extract!");
     const { tenantId } = req.user;
@@ -23,6 +25,17 @@ export const searchAndExtract = async (req, res) => {
 
     console.log("Endpoint", `${AI_SERVICE_ENDPOINT}/api/extract/search`);
     // AI service ko call karein
+    // 2. Create a record of the job in your database first
+    const newJob = await prisma.leadGenerationJob.create({
+      data: {
+        tenantId: tenantId,
+        prompt: prompt,
+        status: "QUEUED", // Set an initial status
+        totalRequested: num_results,
+      },
+    });
+
+    // 3. Call the AI service to start the job
     const { data } = await axios.post(
       `${AI_SERVICE_ENDPOINT}/api/extract/search`,
       { prompt, num_results, offset },
@@ -35,6 +48,14 @@ export const searchAndExtract = async (req, res) => {
     );
     console.log("AI service returned data:", data);
 
+    // Optionally, update your job record with the batchId from the AI service
+    if (data.job_id) {
+      await prisma.leadGenerationJob.update({
+        where: { id: newJob.id },
+        data: { batchId: data.job_id, status: "PROCESSING" },
+      });
+    }
+
     return res.status(200).json(data);
   } catch (err) {
     console.log("err", err.response.data);
@@ -45,7 +66,6 @@ export const searchAndExtract = async (req, res) => {
 
 export const getSearchJobStatus = async (req, res) => {
   try {
-
     const { tenantId, job_id } = req.query;
     if (!tenantId || !job_id) {
       return res
