@@ -225,7 +225,6 @@ export async function sendTrackedEmail(req, res, next) {
       !toEmail ||
       !subject ||
       !htmlBody ||
-      !configurationSetName ||
       !campaignId ||
       !leadId
     ) {
