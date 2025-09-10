@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { quotePlanWithTax } from "../services/payment.service.js";
+import { PrismaClient } from "@prisma/client";
 import flatten from "../utils/flatten.js";
 const prisma = new PrismaClient();
 
@@ -14,17 +15,17 @@ export const getPricing = async (req, res) => {
           where: {
             zone,
             bucket: { in: [bucket, "PUBLIC"] },
-            cadence: "MONTHLY"
+            cadence: "MONTHLY",
           },
           orderBy: {
-            version: "desc"
+            version: "desc",
           },
           take: 1,
           include: {
-            components: true
-          }
-        }
-      }
+            components: true,
+          },
+        },
+      },
     });
 
     res.json(flatten(plans));
@@ -33,3 +34,15 @@ export const getPricing = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch pricing" });
   }
 };
+
+export async function getQuote(req, res) {
+  try {
+    const { plan, cycle, zone } = req.body;
+    const zoneCode =
+      zone || (req.resolveZoneCode ? await req.resolveZoneCode(req) : "IN");
+    const q = await quotePlanWithTax({ plan, zoneCode, cycle });
+    res.status(200).json({ success: true, data: q });
+  } catch (e) {
+    res.status(400).json({ success: false, error: e.message });
+  }
+}

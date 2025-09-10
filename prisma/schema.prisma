@@ -16,7 +16,7 @@ model Plan {
 }
 
 model PlanVersion {
-  id             String         @id @default(uuid())
+  id             String         @id @default(dbgenerated("gen_random_uuid()"))
   planId         String
   version        Int
   zone           ZoneCode
@@ -43,12 +43,15 @@ model Component {
 }
 
 model PriceId {
-  id              String      @id @default(uuid())
+  id              String         @id @default(dbgenerated("(gen_random_uuid())::text"))
   planVersionId   String
-  gateway         String
-  price           Int
+  gateway         PaymentGateway
+  price           Int?
   externalPriceId String
-  PlanVersion     PlanVersion @relation(fields: [planVersionId], references: [id])
+  gatewayPlanId   String?
+  PlanVersion     PlanVersion    @relation(fields: [planVersionId], references: [id])
+
+  @@unique([planVersionId, gateway])
 }
 
 model Tenant {
@@ -90,6 +93,15 @@ model Subscription {
   currentStart       DateTime
   currentEnd         DateTime
   brokerId           String?
+  planPriceId        String?
+  cycle              String?              @default("MONTHLY")
+  nextBillingAt      DateTime?            @db.Timestamptz(6)
+  provider           String?
+  providerSubId      String?
+  createdAt          DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime             @default(now()) @db.Timestamptz(6)
+  providerCustId     String?
+  cancelAtCycleEnd   Boolean?
   PaymentTransaction PaymentTransaction[]
   UsageCounter       UsageCounter[]
   UsageEvent         UsageEvent[]
@@ -329,10 +341,13 @@ model PaymentTransaction {
   id             String       @id @default(dbgenerated("(gen_random_uuid())::text"))
   tenantId       String
   subscriptionId String
-  phonepeOrderId String
+  providerId     String       @unique(map: "paymenttransaction_providerid_unique")
   amount         Int
   status         String       @default("INITIATED")
   createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+  invoiceId      String?
+  invoiceUrl     String?
+  paymentId      String?
   Subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_paymenttransaction_subscription")
   Tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_paymenttransaction_tenant")
 }
@@ -610,6 +625,15 @@ model identity_link {
   @@id([anonymous_id, user_id])
 }
 
+model WebhookEvent {
+  eventId     String    @id
+  provider    String
+  eventType   String
+  receivedAt  DateTime  @default(now()) @db.Timestamptz(6)
+  processed   Boolean   @default(false)
+  processedAt DateTime? @db.Timestamptz(6)
+}
+
 enum PlanType {
   FREE
   PRO
@@ -757,4 +781,18 @@ enum EmailType {
 enum email_direction {
   INBOUND
   OUTBOUND
+}
+
+enum PaymentGateway {
+  RAZORPAY
+  STRIPE
+  WISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+  PENDING
 }
