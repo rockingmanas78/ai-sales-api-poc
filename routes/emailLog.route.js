@@ -1,13 +1,27 @@
-import { Router } from 'express';
-import { getEmailLogs, getEmailLogById } from '../controllers/email.logs.controller.js';
-const logRouter = Router();
+import { Router } from "express";
+import {
+  getEmailMessages,
+  getEmailMessageById,
+} from "../controllers/email.logs.controller.js";
+import verifyToken from "../middlewares/verifyToken.js";
+import authorize from "../middlewares/rbac.js";
 
-import verifyToken from '../middlewares/verifyToken.js';
-import authorize from '../middlewares/rbac.js';
+const router = Router();
 
-// Get all email logs
-logRouter.get('/:tenantId',verifyToken(), authorize('view_emails'), getEmailLogs);
-// Get single email log
-logRouter.get('/:logId',verifyToken(), authorize('view_emails'), getEmailLogById);
+// Get all email messages for a tenant
+router.get(
+  "/tenant/:tenantId",
+  verifyToken(),
+  authorize("view_emails"),
+  getEmailMessages
+);
 
-export default logRouter;
+// Get a single email message by ID
+router.get(
+  "/message/:messageId",
+  verifyToken(),
+  authorize("view_emails"),
+  getEmailMessageById
+);
+
+export default router;

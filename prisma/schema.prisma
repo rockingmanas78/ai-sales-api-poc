@@ -68,7 +68,6 @@ model Tenant {
   Conversation       Conversation[]
   DomainIdentity     DomainIdentity[]
   campaigns          EmailCampaign[]
-  emailLogs          EmailLog[]
   EmailMessage       EmailMessage[]
   templates          EmailTemplate[]
   Feedback           Feedback[]
@@ -173,7 +172,6 @@ model Lead {
   jobId             String?
   bulkEmailJobLeads BulkEmailJobLead[]
   campaignLeads     CampaignLead[]
-  emailLogs         EmailLog[]
   EmailMessage      EmailMessage[]
   LeadGenerationJob LeadGenerationJob? @relation(fields: [jobId], references: [id])
   tenant            Tenant             @relation(fields: [tenantId], references: [id])
@@ -247,39 +245,7 @@ model EmailCampaign {
   campaignLeads CampaignLead[]
   template      EmailTemplate  @relation(fields: [templateId], references: [id])
   tenant        Tenant         @relation(fields: [tenantId], references: [id])
-  logs          EmailLog[]
   EmailMessage  EmailMessage[]
-}
-
-model EmailLog {
-  id                String          @id @default(uuid())
-  tenantId          String
-  campaignId        String
-  leadId            String
-  status            EmailStatus     @default(QUEUED)
-  sentAt            DateTime?
-  openedAt          DateTime?
-  clickedAt         DateTime?
-  repliedAt         DateTime?
-  createdAt         DateTime?       @db.Timestamptz(6)
-  senderName        String?
-  senderEmail       String?
-  recipientEmails   String[]
-  subject           String?
-  content           String?
-  emailType         EmailType?      @default(MANUAL)
-  providerMessageId String?
-  outboundMessageId String?
-  replyToToken      String?
-  campaign          EmailCampaign   @relation(fields: [campaignId], references: [id])
-  lead              Lead            @relation(fields: [leadId], references: [id])
-  tenant            Tenant          @relation(fields: [tenantId], references: [id])
-  EmailMessage      EmailMessage[]
-  GeneratedEmail    GeneratedEmail?
-
-  @@index([tenantId, status])
-  @@index([tenantId, providerMessageId], map: "emaillog_tenant_providerMessageId_idx")
-  @@index([tenantId, replyToToken], map: "emaillog_tenant_replyToToken_idx")
 }
 
 model BulkEmailJob {
@@ -496,13 +462,13 @@ model WaitListMembers {
 }
 
 model GeneratedEmail {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  emailLogId    String    @unique
-  subject       String
-  content       String
-  createdAt     DateTime  @default(now()) @db.Timestamp(6)
-  scheduledDate DateTime? @db.Timestamp(6)
-  EmailLog      EmailLog  @relation(fields: [emailLogId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subject        String
+  content        String
+  createdAt      DateTime      @default(now()) @db.Timestamp(6)
+  scheduledDate  DateTime?     @db.Timestamp(6)
+  emailMessageId String?       @db.Uuid
+  EmailMessage   EmailMessage? @relation(fields: [emailMessageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model Conversation {
@@ -523,37 +489,42 @@ model Conversation {
 }
 
 model EmailMessage {
-  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId          String
-  conversationId    String          @db.Uuid
-  direction         email_direction
-  provider          String          @default("AWS_SES")
-  providerMessageId String
-  subject           String?
-  from              String[]        @default([])
-  to                String[]        @default([])
-  cc                String[]        @default([])
-  bcc               String[]        @default([])
-  text              String?
-  html              String?
-  headers           Json?
-  verdicts          Json?
-  inReplyTo         String?
-  referencesIds     String[]
-  plusToken         String?
-  s3Bucket          String?
-  s3Key             String?
-  receivedAt        DateTime?       @db.Timestamptz(6)
-  sentAt            DateTime?       @db.Timestamptz(6)
-  createdAt         DateTime        @default(now()) @db.Timestamptz(6)
-  campaignId        String?
-  leadId            String?
-  emailLogId        String?
-  EmailCampaign     EmailCampaign?  @relation(fields: [campaignId], references: [id], onUpdate: NoAction, map: "emailmessage_campaign_fkey")
-  Conversation      Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "emailmessage_conversation_fkey")
-  EmailLog          EmailLog?       @relation(fields: [emailLogId], references: [id], onUpdate: NoAction, map: "emailmessage_emaillog_fkey")
-  Lead              Lead?           @relation(fields: [leadId], references: [id], onUpdate: NoAction, map: "emailmessage_lead_fkey")
-  Tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "emailmessage_tenant_fkey")
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String
+  conversationId     String           @db.Uuid
+  direction          email_direction
+  provider           String           @default("AWS_SES")
+  providerMessageId  String
+  subject            String?
+  from               String[]         @default([])
+  to                 String[]         @default([])
+  cc                 String[]         @default([])
+  bcc                String[]         @default([])
+  text               String?
+  html               String?
+  headers            Json?
+  verdicts           Json?
+  inReplyTo          String?
+  referencesIds      String[]
+  plusToken          String?
+  s3Bucket           String?
+  s3Key              String?
+  receivedAt         DateTime?        @db.Timestamptz(6)
+  sentAt             DateTime?        @db.Timestamptz(6)
+  createdAt          DateTime         @default(now()) @db.Timestamptz(6)
+  campaignId         String?
+  leadId             String?
+  lastDeliveryStatus String?
+  firstOpenedAt      DateTime?        @db.Timestamptz(6)
+  opensCount         Int?             @default(0)
+  clicksCount        Int?             @default(0)
+  lastEventAt        DateTime?        @db.Timestamptz(6)
+  EmailEvent         EmailEvent[]
+  EmailCampaign      EmailCampaign?   @relation(fields: [campaignId], references: [id], onUpdate: NoAction, map: "emailmessage_campaign_fkey")
+  Conversation       Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "emailmessage_conversation_fkey")
+  Lead               Lead?            @relation(fields: [leadId], references: [id], onUpdate: NoAction, map: "emailmessage_lead_fkey")
+  Tenant             Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "emailmessage_tenant_fkey")
+  GeneratedEmail     GeneratedEmail[]
 
   @@unique([tenantId, providerMessageId], map: "emailmessage_tenant_providerMessageId_uq")
   @@index([tenantId, conversationId, createdAt], map: "emailmessage_tenant_conv_createdAt_idx")
@@ -632,6 +603,23 @@ model WebhookEvent {
   receivedAt  DateTime  @default(now()) @db.Timestamptz(6)
   processed   Boolean   @default(false)
   processedAt DateTime? @db.Timestamptz(6)
+}
+
+model EmailEvent {
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String
+  emailMessageId    String       @db.Uuid
+  providerMessageId String
+  eventType         String
+  occurredAt        DateTime     @db.Timestamptz(6)
+  snsMessageId      String       @unique
+  payload           Json         @default("{}")
+  createdAt         DateTime     @default(now()) @db.Timestamptz(6)
+  EmailMessage      EmailMessage @relation(fields: [emailMessageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([emailMessageId], map: "idx_emailevent_emailmessage")
+  @@index([providerMessageId], map: "idx_emailevent_provider")
+  @@index([tenantId, eventType], map: "idx_emailevent_tenant_eventtype")
 }
 
 enum PlanType {

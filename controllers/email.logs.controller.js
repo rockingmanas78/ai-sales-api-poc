@@ -1,59 +1,79 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
-// GET all email logs for a tenant
-export const getEmailLogs = async (req, res) => {
+/**
+ * GET all email messages for a tenant
+ * (replaces "email logs")
+ */
+export const getEmailMessages = async (req, res) => {
   try {
     const { tenantId } = req.params;
 
     if (!tenantId) {
-      return res.status(400).json({ error: 'tenantId is required in URL params.' });
+      return res
+        .status(400)
+        .json({ error: "tenantId is required in URL params." });
     }
 
-    const logs = await prisma.emailLog.findMany({
+    const messages = await prisma.emailMessage.findMany({
       where: { tenantId },
       include: {
         campaign: true,
         lead: true,
+        conversation: true,
+        events: {
+          orderBy: { createdAt: "desc" },
+          take: 5, // fetch latest few events per message
+        },
       },
-      orderBy: { sentAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
-    res.json(logs);
+    res.json(messages);
   } catch (error) {
-    console.error('Error fetching email logs:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error fetching email messages:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
-// GET single email log by ID and tenant
-export const getEmailLogById = async (req, res) => {
+/**
+ * GET single email message by ID (scoped to tenant)
+ */
+export const getEmailMessageById = async (req, res) => {
   try {
-    const { logId } = req.params;
-    const  tenantId  = req.query.tenantId;
+    const { messageId } = req.params;
+    const tenantId = req.query.tenantId;
 
     if (!tenantId) {
-      return res.status(400).json({ error: 'tenantId is required in query params.' });
+      return res
+        .status(400)
+        .json({ error: "tenantId is required in query params." });
     }
 
-    const log = await prisma.emailLog.findFirst({
+    const message = await prisma.emailMessage.findFirst({
       where: {
-        id: logId,
+        id: messageId,
         tenantId,
       },
       include: {
         campaign: true,
         lead: true,
+        conversation: true,
+        events: {
+          orderBy: { createdAt: "asc" }, // full event timeline
+        },
       },
     });
 
-    if (!log) {
-      return res.status(404).json({ error: 'Email log not found or does not belong to tenant' });
+    if (!message) {
+      return res.status(404).json({
+        error: "Email message not found or does not belong to tenant",
+      });
     }
 
-    res.json(log);
+    res.json(message);
   } catch (error) {
-    console.error('Error fetching email log:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error fetching email message:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };

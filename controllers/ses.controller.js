@@ -230,27 +230,11 @@ export async function sendTrackedEmail(req, res, next) {
     ) {
       return res.status(400).json({
         error:
-          "tenantId, fromEmail, toEmail, subject, htmlBody, configurationSetName and campaignId are required",
+          "tenantId, fromEmail, toEmail, subject, htmlBody, campaignId, and leadId are required",
       });
     }
-    console.log("Stating emailLog creation");
-    // 1) Pre-create the EmailLog to get a stable token (id)
-    const emailLog = await prisma.emailLog.create({
-      data: {
-        tenantId,
-        campaignId: campaignId,
-        leadId: leadId,
-        status: "QUEUED",
-        senderEmail: fromEmail,
-        recipientEmails: [toEmail],
-        subject,
-        content: htmlBody,
-        createdAt: new Date(),
-      },
-    });
-    console.log("EmailLog created", emailLog);
 
-    // 2) Resolve tenant inbound subdomain
+    // 1) Resolve inbound subdomain
     const inbound = await prisma.domainIdentity.findFirst({
       where: {
         tenantId,
@@ -259,102 +243,118 @@ export async function sendTrackedEmail(req, res, next) {
       },
       select: { domainName: true },
     });
-    console.log("Resolve tenant inbound subdomain", inbound);
     if (!inbound) {
       return res
         .status(400)
         .json({ error: "Inbound subdomain not verified for this tenant" });
     }
 
-    // 3) Build Reply-To using plus-addressing (RFC 5233)
-    const replyToToken = emailLog.id;
-    const replyTo = `reply+${replyToToken}@${inbound.domainName}`;
-    console.log("Build Reply-To", replyTo);
+    // 2) Pre-create a conversation/thread key
+    const tempToken = crypto.randomUUID(); // stable ID for reply-to
+    const replyTo = `reply+${tempToken}@${inbound.domainName}`;
 
-    // 4) Send with configuration set, Reply-To, and tags
+    // 3) Send via SES
     const result = await sesSendEmail({
       fromEmail,
       toEmail,
       subject,
       htmlBody,
-      configurationSetName,
+      configurationSetName:
+        configurationSetName || process.env.SES_CONFIGURATION_SET,
       replyToAddresses: [replyTo],
       messageTags: [
         { Name: "tenantId", Value: tenantId },
-        { Name: "emailLogId", Value: emailLog.id },
+        { Name: "leadId", Value: leadId },
+        { Name: "campaignId", Value: campaignId },
       ],
     });
-    console.log("email sent", result);
 
-    // 5) Persist everything atomically (fast DB-only TX)
-     //    - upsert Conversation by (tenantId, threadKey)
-     //    - create OUTBOUND EmailMessage idempotently
-     //    - mark EmailLog SENT (  set providerMessageId / replyToToken)
-     await prisma.$transaction(async (transaction) => {
-       const threadKey = replyToToken;
-       const conversation = await transaction.conversation.upsert({
-         where: { tenantId_threadKey: { tenantId, threadKey } },
-         create: {
-           tenantId,
-           threadKey,
-           subject,
-           participants: [fromEmail, toEmail],
-         },
-         update: {
-           subject: { set: subject ?? undefined },
-           participants: {
-             set: Array.from(new Set([fromEmail, toEmail, ...(/* keep old */ (await transaction.conversation.findUnique({
-               where: { tenantId_threadKey: { tenantId, threadKey } },
-               select: { participants: true }
-             }))?.participants ?? [])]))
-           },
-           lastMessageAt: new Date()
-         }
-       });
- 
-       await transaction.emailMessage.upsert({
-         where: { tenantId_providerMessageId: { tenantId, providerMessageId: result.MessageId } },
-         create: {
-           tenantId,
-           conversationId: conversation.id,
-           direction: "OUTBOUND",
-           provider: "AWS_SES",
-           providerMessageId: result.MessageId,
-           subject,
-           from: [fromEmail],
-           to: [toEmail],
-           html: htmlBody,
-           headers: { "Reply-To": replyTo },
-           verdicts: {},
-           plusToken: replyToToken,
-           sentAt: new Date(),
-           campaignId,
-           leadId,
-           emailLogId: emailLog.id,
-         },
-         update: {} // idempotent
-       });
- 
-       await transaction.emailLog.update({
-         where: { id: emailLog.id },
-         data: {
-           status: "SENT",
-           sentAt: new Date(),
-           providerMessageId: result.MessageId,
-           outboundMessageId: result.MessageId,
-           replyToToken: replyToToken,
-         },
-       });
-     }, { timeout: 15_000 }); // keep tight; bump if needed per Prisma docs
+    // 4) Persist atomically
+    await prisma.$transaction(async (tx) => {
+      // upsert conversation
+      const conversation = await tx.conversation.upsert({
+        where: { tenantId_threadKey: { tenantId, threadKey: tempToken } },
+        create: {
+          tenantId,
+          threadKey: tempToken,
+          subject,
+          participants: [fromEmail, toEmail],
+          lastMessageAt: new Date(),
+        },
+        update: {
+          subject: { set: subject },
+          participants: {
+            set: Array.from(
+              new Set([
+                fromEmail,
+                toEmail,
+                ...((
+                  await tx.conversation.findUnique({
+                    where: {
+                      tenantId_threadKey: { tenantId, threadKey: tempToken },
+                    },
+                    select: { participants: true },
+                  })
+                )?.participants ?? []),
+              ])
+            ),
+          },
+          lastMessageAt: new Date(),
+        },
+      });
+
+      // create outbound email message
+      const message = await tx.emailMessage.upsert({
+        where: {
+          tenantId_providerMessageId: {
+            tenantId,
+            providerMessageId: result.MessageId,
+          },
+        },
+        create: {
+          tenantId,
+          conversationId: conversation.id,
+          direction: "OUTBOUND",
+          provider: "AWS_SES",
+          providerMessageId: result.MessageId,
+          subject,
+          from: [fromEmail],
+          to: [toEmail],
+          html: htmlBody,
+          headers: { "Reply-To": replyTo },
+          verdicts: {},
+          plusToken: tempToken,
+          sentAt: new Date(),
+          campaignId,
+          leadId,
+        },
+        update: {},
+      });
+
+      // create initial SENT event
+      await tx.emailEvent.create({
+        data: {
+          tenantId,
+          messageId: message.id,
+          type: "SENT",
+          providerMessageId: result.MessageId,
+          createdAt: new Date(),
+          metadata: {
+            fromEmail,
+            toEmail,
+            configurationSetName,
+          },
+        },
+      });
+    });
 
     return res.json({
       message: "Email sent",
       messageId: result.MessageId,
-      emailLogId: emailLog.id,
       replyTo,
     });
   } catch (err) {
-    console.log(err);
+    console.error("sendTrackedEmail error:", err);
     next(err);
   }
 }

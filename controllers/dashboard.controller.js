@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 export const getDashboardStats = async (req, res) => {
@@ -13,34 +13,40 @@ export const getDashboardStats = async (req, res) => {
     });
 
     const activeCampaigns = await prisma.emailCampaign.count({
-      where: { tenantId, status: 'ACTIVE' },
+      where: { tenantId, status: "ACTIVE" },
     });
 
-    const emailsSentToday = await prisma.emailLog.count({
+    const emailsSentToday = await prisma.emailMessage.count({
       where: {
         tenantId,
+        direction: "OUTBOUND",
         sentAt: { gte: today },
-        status: 'SENT',
       },
     });
 
-    const totalSent = await prisma.emailLog.count({
-      where: { tenantId, status: 'SENT' },
+    const totalSent = await prisma.emailMessage.count({
+      where: { tenantId, direction: "OUTBOUND", sentAt: { not: null } },
     });
 
-    const totalReplied = await prisma.emailLog.count({
-      where: { tenantId, status: 'REPLIED' },
+    const totalReplied = await prisma.emailMessage.count({
+      where: {
+        tenantId,
+        direction: "INBOUND",
+        inReplyTo: { not: null }, // heuristics: reply if it references a previous message
+      },
     });
 
-    const responseRate = totalSent === 0 ? 0 : ((totalReplied / totalSent) * 100).toFixed(1);
+    const responseRate =
+      totalSent === 0
+        ? 0
+        : parseFloat(((totalReplied / totalSent) * 100).toFixed(1));
 
     res.json({
       totalLeads,
       activeCampaigns,
       emailsSentToday,
-      responseRate: parseFloat(responseRate),
+      responseRate,
     });
-
   } catch (error) {
     console.error("Dashboard Error:", error);
     res.status(500).json({ message: "Failed to fetch dashboard stats" });

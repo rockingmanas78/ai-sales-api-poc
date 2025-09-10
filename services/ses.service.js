@@ -30,28 +30,28 @@ export async function verifyDomainIdentity(domainName) {
     name: `${token}._domainkey`,
     type: "CNAME",
     value: `${token}.dkim.amazonses.com`,
-    ttl: 14400
+    ttl: 14400,
   }));
 
   cnameRecords.push({
     name: `_dmarc`,
     type: "TXT",
     value: "v=DMARC1; p=none;",
-    ttl: 1800
+    ttl: 1800,
   });
 
   cnameRecords.push({
     name: "@",
     type: "TXT",
     value: "v=spf1 include:amazonses.com ~all",
-    ttl: 1800
+    ttl: 1800,
   });
 
   cnameRecords.push({
     type: "TXT",
     name: `_amazonses`,
     value: res.VerificationToken,
-    ttl: 1800
+    ttl: 1800,
   });
   return { records: cnameRecords, token: res.VerificationToken };
 }
@@ -87,45 +87,45 @@ export async function getIdentityVerificationAttributes(identities) {
   return res.VerificationAttributes;
 }
 
- // Minimal MIME builder for HTML sends (adds arbitrary headers)
- export async function sendRawEmailWithHeaders({
-   fromEmail,
-   toEmail,
-   subject,
-   htmlBody,
-   replyTo,                     // single addr
-   extraHeaders = {},           // e.g., { "In-Reply-To": "<...>", "References": "<...> ..." }
-   configurationSetName="identity-onboaring-for-tenants",        // optional
-   messageTags = []             // optional SES tags
- }) {
-   // Build headers (CRLF strictly per RFC 5322)
-   const baseHeaders = {
-     From: fromEmail,
-     To: toEmail,
-     Subject: subject,
-     "MIME-Version": "1.0",
-     "Content-Type": 'text/html; charset="UTF-8"',
-     ...(replyTo ? { "Reply-To": replyTo } : {}),
-     ...extraHeaders
-   };
-   const headerLines = Object.entries(baseHeaders)
-     .filter(([, v]) => v !== undefined && v !== null)
-     .map(([k, v]) => `${k}: ${v}`);
- 
-   const raw = [
-     ...headerLines,
-     "",                    // blank line between headers and body
-     htmlBody || ""
-   ].join("\r\n");
- 
-   const cmd = new SendRawEmailCommand({
-     RawMessage: { Data: new TextEncoder().encode(raw) },
-     ...(configurationSetName && { ConfigurationSetName: configurationSetName }),
-     ...(messageTags.length ? { Tags: messageTags } : {})
-   });
-   // Note: SES overwrites Message-ID/Date; our threading headers remain. :contentReference[oaicite:1]{index=1}
-   return await ses.send(cmd);
- }
+// Minimal MIME builder for HTML sends (adds arbitrary headers)
+export async function sendRawEmailWithHeaders({
+  fromEmail,
+  toEmail,
+  subject,
+  htmlBody,
+  replyTo, // single addr
+  extraHeaders = {}, // e.g., { "In-Reply-To": "<...>", "References": "<...> ..." }
+  configurationSetName = "identity-onboaring-for-tenants", // optional
+  messageTags = [], // optional SES tags
+}) {
+  // Build headers (CRLF strictly per RFC 5322)
+  const baseHeaders = {
+    From: fromEmail,
+    To: toEmail,
+    Subject: subject,
+    "MIME-Version": "1.0",
+    "Content-Type": 'text/html; charset="UTF-8"',
+    ...(replyTo ? { "Reply-To": replyTo } : {}),
+    ...extraHeaders,
+  };
+  const headerLines = Object.entries(baseHeaders)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => `${k}: ${v}`);
+
+  const raw = [
+    ...headerLines,
+    "", // blank line between headers and body
+    htmlBody || "",
+  ].join("\r\n");
+
+  const cmd = new SendRawEmailCommand({
+    RawMessage: { Data: new TextEncoder().encode(raw) },
+    ...(configurationSetName && { ConfigurationSetName: configurationSetName }),
+    ...(messageTags.length ? { Tags: messageTags } : {}),
+  });
+  // Note: SES overwrites Message-ID/Date; our threading headers remain. :contentReference[oaicite:1]{index=1}
+  return await ses.send(cmd);
+}
 
 // services/ses.service.js
 export async function sendEmail({
@@ -180,7 +180,7 @@ export async function initiateSubdomainIdentity(subDomain, prefix) {
       name: `${tok}._domainkey.${prefix}`,
       type: "CNAME",
       value: `${tok}.dkim.amazonses.com`,
-      ttl: 14400
+      ttl: 14400,
     });
   });
 
@@ -189,7 +189,7 @@ export async function initiateSubdomainIdentity(subDomain, prefix) {
     name: `_dmarc.${prefix}`,
     type: "TXT",
     value: "v=DMARC1; p=none;",
-    ttl: 1800
+    ttl: 1800,
   });
 
   // 3.4 SPF record
@@ -197,7 +197,7 @@ export async function initiateSubdomainIdentity(subDomain, prefix) {
     name: prefix,
     type: "TXT",
     value: "v=spf1 include:amazonses.com ~all",
-    ttl: 1800
+    ttl: 1800,
   });
 
   // 3.5 MX record for inbound mail
@@ -208,7 +208,7 @@ export async function initiateSubdomainIdentity(subDomain, prefix) {
     name: prefix,
     type: "MX",
     value: endpoint,
-    ttl: 300
+    ttl: 300,
   });
 
   return { records, token };
@@ -228,21 +228,25 @@ export async function getIdentityVerificationStatus(identities) {
 }
 
 // Helpers
-const asArray = (x) => (Array.isArray(x) ? x : (x == null ? [] : [x]));
-const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig;
+const asArray = (x) => (Array.isArray(x) ? x : x == null ? [] : [x]);
+const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 
 function extractEmails(input) {
   const out = [];
   for (const item of asArray(input)) {
-    if (typeof item !== 'string') continue;
+    if (typeof item !== "string") continue;
     const matches = item.match(EMAIL_RE);
     if (matches) out.push(...matches);
   }
   // de-dupe + lowercase domains (pragmatic)
-  return [...new Set(out.map(e => {
-    const [local, domain] = e.split('@');
-    return `${local}@${(domain || '').toLowerCase()}`;
-  }))];
+  return [
+    ...new Set(
+      out.map((e) => {
+        const [local, domain] = e.split("@");
+        return `${local}@${(domain || "").toLowerCase()}`;
+      })
+    ),
+  ];
 }
 
 // Accept `<id>` or plain; if array, use the last one like mail clients do.
@@ -250,22 +254,22 @@ function cleanMsgId(v) {
   if (!v) return null;
   let s = Array.isArray(v) ? String(v[v.length - 1]) : String(v);
   s = s.trim();
-  if (s.startsWith('<') && s.endsWith('>')) s = s.slice(1, -1);
+  if (s.startsWith("<") && s.endsWith(">")) s = s.slice(1, -1);
   return s || null;
 }
 function splitReferences(v) {
   // Accept array, comma/space separated string, with or without angle brackets
-  const raw = Array.isArray(v) ? v.join(' ') : String(v || '');
+  const raw = Array.isArray(v) ? v.join(" ") : String(v || "");
   const ids = raw
     .split(/[,\s]+/)
-    .map(x => cleanMsgId(x))
+    .map((x) => cleanMsgId(x))
     .filter(Boolean);
   return [...new Set(ids)];
 }
 function extractPlusTokenFromTo(toArr) {
   for (const addr of toArr) {
-    const [local] = addr.split('@');
-    const i = local.indexOf('+');
+    const [local] = addr.split("@");
+    const i = local.indexOf("+");
     if (i > -1) return local.slice(i + 1);
   }
   return null;
@@ -273,25 +277,25 @@ function extractPlusTokenFromTo(toArr) {
 
 export async function processInbound(evt) {
   try {
-    console.log('Inbound evt:', JSON.stringify(evt, null, 2));
+    console.log("Inbound evt:", JSON.stringify(evt, null, 2));
 
     // Normalize addresses first (your Lambda POSTS arrays, but harden for strings)
-    const toEmails   = extractEmails(evt.to);
+    const toEmails = extractEmails(evt.to);
     const fromEmails = extractEmails(evt.from);
 
     // 1) Resolve tenant by inbound domain (first "to" addr)
-    const recipientDomain = (toEmails[0] || '').split('@')[1] || null;
+    const recipientDomain = (toEmails[0] || "").split("@")[1] || null;
     if (!recipientDomain) {
-      console.warn('processInbound: no recipientDomain');
+      console.warn("processInbound: no recipientDomain");
       return; // DO NOT use res here
     }
 
     const domain = await prisma.domainIdentity.findFirst({
-      where: { domainName: recipientDomain, verificationStatus: 'Success' },
-      select: { tenantId: true }
+      where: { domainName: recipientDomain, verificationStatus: "Success" },
+      select: { tenantId: true },
     });
     if (!domain) {
-      console.warn('processInbound: unknown inbound domain', recipientDomain);
+      console.warn("processInbound: unknown inbound domain", recipientDomain);
       return;
     }
     const tenantId = domain.tenantId;
@@ -299,40 +303,56 @@ export async function processInbound(evt) {
     // 2) Locate originating EmailLog (plus-token first, RFC header next)
     const plusToken = extractPlusTokenFromTo(toEmails);
 
-    let emailLog = null;
-    if (plusToken) {
-      emailLog = await prisma.emailLog.findFirst({ where: { tenantId, id: plusToken } });
-    }
-
     // in-reply-to / references can be in evt fields or headers
     const hdrs = evt.headers || {};
-    const hdrInReplyTo = hdrs['in-reply-to'] || hdrs['In-Reply-To'];
-    const hdrRefs      = hdrs['references']  || hdrs['References'];
+    const hdrInReplyTo = hdrs["in-reply-to"] || hdrs["In-Reply-To"];
+    const hdrRefs = hdrs["references"] || hdrs["References"];
 
-    const inReplyTo   = cleanMsgId(evt.inReplyTo || hdrInReplyTo);
-    const references  = evt.references ? splitReferences(evt.references) : splitReferences(hdrRefs);
+    const inReplyTo = cleanMsgId(evt.inReplyTo || hdrInReplyTo);
+    const references = evt.references
+      ? splitReferences(evt.references)
+      : splitReferences(hdrRefs);
 
-    if (!emailLog && inReplyTo) {
-      emailLog = await prisma.emailLog.findFirst({ where: { tenantId, outboundMessageId: inReplyTo } });
+    // Try plus-token first
+    let originatingMessage = null;
+    if (plusToken) {
+      originatingMessage = await prisma.emailMessage.findFirst({
+        where: { tenantId, plusToken },
+      });
+    }
+
+    // fallback to RFC threading header
+    if (!originatingMessage && inReplyTo) {
+      originatingMessage = await prisma.emailMessage.findFirst({
+        where: { tenantId, outboundMessageId: inReplyTo },
+      });
     }
 
     // 3) Thread key (RFC 5322 first; fallback to plus-token; else subj)
-    const refTail  = references.length ? references[references.length - 1] : null;
+    const refTail = references.length
+      ? references[references.length - 1]
+      : null;
     const key = evt.providerMessageId || evt?.s3?.objectKey || "unknown";
     //const threadKey = inReplyTo || refTail || plusToken || (evt.subject ? `subj:${evt.subject}` : `msg:${key}`);
-    const threadKeyPreferred = plusToken || inReplyTo || refTail || (evt.subject ? `subj:${evt.subject}` : `msg:${providerMessageId}`);
+    const threadKeyPreferred =
+      plusToken ||
+      inReplyTo ||
+      refTail ||
+      (evt.subject ? `subj:${evt.subject}` : `msg:${providerMessageId}`);
 
     // Participants: deduped from and to; drop your system inbound alias
     // const participants = [...new Set(
     //   [...fromEmails, ...toEmails].filter(e => !e.endsWith(`@${INBOUND_ROOT}`))
     // )];
 
-    const participants = [...new Set(
-      [...fromEmails, ...toEmails].filter(e => {
-        const d = e.split('@')[1]?.toLowerCase();
-        return d && d !== recipientDomain?.toLowerCase(); // exclude only the event’s inbound domain
-      })
-    )];
+    const participants = [
+      ...new Set(
+        [...fromEmails, ...toEmails].filter((e) => {
+          const d = e.split("@")[1]?.toLowerCase();
+          return d && d !== recipientDomain?.toLowerCase(); // exclude only the event’s inbound domain
+        })
+      ),
+    ];
 
     console.log("Participants", participants);
 
@@ -408,116 +428,142 @@ export async function processInbound(evt) {
     //     data: { status: 'REPLIED', repliedAt: new Date() }
     //   });
     // }
-         // --- transactional, fast, idempotent DB writes only ---
-     let conversationId;  // we'll capture this for logging
-     await prisma.$transaction(async (tx) => {
-       // (a) find-by-preferred key (plusToken) OR merge an existing RFC-key convo into it
-       let conv = await tx.conversation.findUnique({
-         where: { tenantId_threadKey: { tenantId, threadKey: threadKeyPreferred } },
-         select: { id: true, participants: true }
-       });
- 
-       if (!conv) {
-         // If we didn’t find by plusToken (or fallback), but we DO have an RFC key, try that,
-         // then migrate its key to the preferred plusToken to avoid future splits.
-         const altKey = (inReplyTo || refTail) ?? null;
-         if (altKey) {
-           const alt = await tx.conversation.findUnique({
-             where: { tenantId_threadKey: { tenantId, threadKey: altKey } },
-             select: { id: true, participants: true }
-           });
-           if (alt) {
-             // merge: move the thread to the preferred key (plusToken) as canonical
-             await tx.conversation.update({
-               where: { id: alt.id },
-               data: {
-                 threadKey: threadKeyPreferred,
-                 subject: evt.subject ?? undefined,
-                 participants: {
-                   set: Array.from(new Set([...(alt.participants || []), ...participants]))
-                 },
-                 lastMessageAt: new Date()
-               }
-             });
-             conv = { id: alt.id, participants: alt.participants };
-           }
-         }
-       }
- 
-       // If still not found, create with the preferred key
-       if (!conv) {
-         const created = await tx.conversation.create({
-           data: {
-             tenantId,
-             threadKey: threadKeyPreferred,
-           }
-         });
-         conv = { id: created.id, participants: created.participants };
-       } else {
-         // update subject/participants if needed
-         await tx.conversation.update({
-           where: { id: conv.id },
-           data: {
-             subject: { set: (evt.subject ?? undefined) },
-             participants: { set: Array.from(new Set([...(conv.participants || []), ...participants])) },
-             lastMessageAt: new Date()
-           }
-         });
-       }
- 
-       // (b) link originating EmailLog if present (plus-token first, then in-reply-to)
-       let linkedLog = null;
-       if (plusToken) {
-         linkedLog = await tx.emailLog.findFirst({ where: { tenantId, id: plusToken } });
-       }
-       if (!linkedLog && inReplyTo) {
-         linkedLog = await tx.emailLog.findFirst({ where: { tenantId, outboundMessageId: inReplyTo } });
+    // --- transactional, fast, idempotent DB writes only ---
+    let conversationId; // we'll capture this for logging
+    await prisma.$transaction(
+      async (tx) => {
+        // (a) find-by-preferred key (plusToken) OR merge an existing RFC-key convo into it
+        let conv = await tx.conversation.findUnique({
+          where: {
+            tenantId_threadKey: { tenantId, threadKey: threadKeyPreferred },
+          },
+          select: { id: true, participants: true },
+        });
 
-       }
- 
-       // (c) create inbound EmailMessage idempotently
-       await tx.emailMessage.upsert({
-         where: { tenantId_providerMessageId: { tenantId, providerMessageId } },
-         create: {
-           tenantId,
-           conversationId: conv.id,
-           direction: 'INBOUND',
-           provider: 'AWS_SES',
-           providerMessageId,
-           subject: evt.subject || null,
-           from: fromEmails,
-           to: toEmails,
-           cc: extractEmails(evt.cc),
-           bcc: extractEmails(evt.bcc),
-           text: evt.replyText || evt.fullText || null,
-           html: evt.html || null,
-           headers: hdrs,
-           verdicts: evt.verdicts || {},
-           inReplyTo,
-           referencesIds: references,
-           plusToken: plusToken || null,
-           s3Bucket: evt?.s3?.bucket || null,
-           s3Key: evt?.s3?.objectKey || null,
-           receivedAt: new Date(),
-           campaignId: linkedLog?.campaignId || null,
-           leadId: linkedLog?.leadId || null,
-           emailLogId: linkedLog?.id || null
-         },
-         update: {} // idempotent
-       });
- 
-       // (d) flip log → REPLIED if we found it
-       if (linkedLog && linkedLog.status !== 'REPLIED') {
-         await tx.emailLog.update({
-           where: { id: linkedLog.id },
-           data: { status: 'REPLIED', repliedAt: new Date() }
-         });
-       }
-       conversationId = conv.id;
-     }, { timeout: 15_000 });
+        if (!conv) {
+          // If we didn’t find by plusToken (or fallback), but we DO have an RFC key, try that,
+          // then migrate its key to the preferred plusToken to avoid future splits.
+          const altKey = (inReplyTo || refTail) ?? null;
+          if (altKey) {
+            const alt = await tx.conversation.findUnique({
+              where: { tenantId_threadKey: { tenantId, threadKey: altKey } },
+              select: { id: true, participants: true },
+            });
+            if (alt) {
+              // merge: move the thread to the preferred key (plusToken) as canonical
+              await tx.conversation.update({
+                where: { id: alt.id },
+                data: {
+                  threadKey: threadKeyPreferred,
+                  subject: evt.subject ?? undefined,
+                  participants: {
+                    set: Array.from(
+                      new Set([...(alt.participants || []), ...participants])
+                    ),
+                  },
+                  lastMessageAt: new Date(),
+                },
+              });
+              conv = { id: alt.id, participants: alt.participants };
+            }
+          }
+        }
 
-    console.log('processInbound: OK', { tenantId, conversationId, emailLogId: emailLog?.id || null });
+        // If still not found, create with the preferred key
+        if (!conv) {
+          const created = await tx.conversation.create({
+            data: {
+              tenantId,
+              threadKey: threadKeyPreferred,
+            },
+          });
+          conv = { id: created.id, participants: created.participants };
+        } else {
+          // update subject/participants if needed
+          await tx.conversation.update({
+            where: { id: conv.id },
+            data: {
+              subject: { set: evt.subject ?? undefined },
+              participants: {
+                set: Array.from(
+                  new Set([...(conv.participants || []), ...participants])
+                ),
+              },
+              lastMessageAt: new Date(),
+            },
+          });
+        }
+
+        // (b) Link originating EmailMessage first (plus-token preferred, then RFC headers)
+        let originatingMessage = null;
+        if (plusToken) {
+          originatingMessage = await tx.emailMessage.findFirst({
+            where: { tenantId, plusToken },
+          });
+        }
+
+        if (!originatingMessage && inReplyTo) {
+          originatingMessage = await tx.emailMessage.findFirst({
+            where: { tenantId, outboundMessageId: inReplyTo },
+          });
+        }
+
+        // (c) Create inbound EmailMessage idempotently
+        const inboundMessage = await tx.emailMessage.upsert({
+          where: {
+            tenantId_providerMessageId: { tenantId, providerMessageId },
+          },
+          create: {
+            tenantId,
+            conversationId: conv.id,
+            direction: "INBOUND",
+            provider: "AWS_SES",
+            providerMessageId,
+            subject: evt.subject || null,
+            from: fromEmails,
+            to: toEmails,
+            cc: extractEmails(evt.cc),
+            bcc: extractEmails(evt.bcc),
+            text: evt.replyText || evt.fullText || null,
+            html: evt.html || null,
+            headers: hdrs,
+            verdicts: evt.verdicts || {},
+            inReplyTo,
+            referencesIds: references,
+            plusToken: plusToken || null,
+            s3Bucket: evt?.s3?.bucket || null,
+            s3Key: evt?.s3?.objectKey || null,
+            receivedAt: new Date(),
+            campaignId: originatingMessage?.campaignId || null,
+            leadId: originatingMessage?.leadId || null,
+          },
+          update: {}, // idempotent
+        });
+
+        // (d) Instead of mutating emailLog, log reply event
+        if (originatingMessage) {
+          await tx.emailEvent.create({
+            data: {
+              tenantId,
+              emailMessageId: inboundMessage.id, // link to the inbound message
+              type: "REPLIED",
+              createdAt: new Date(),
+              campaignId: originatingMessage.campaignId ?? null,
+              leadId: originatingMessage.leadId ?? null,
+            },
+          });
+        }
+
+        conversationId = conv.id;
+      },
+      { timeout: 15_000 }
+    );
+
+    console.log("processInbound: OK", {
+      tenantId,
+      conversationId,
+    });
   } catch (err) {
-    console.error('processInbound failed:', err);
+    console.error("processInbound failed:", err);
   }
 }

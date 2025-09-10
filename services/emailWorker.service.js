@@ -1,18 +1,17 @@
 // bulkEmailWorker.js
-import { PrismaClient } from '@prisma/client';
-import mustache from 'mustache';
-import { sendEmail } from './ses.service.js';
-
+import { PrismaClient } from "@prisma/client";
+import mustache from "mustache";
+import { sendEmail } from "./ses.service.js";
 
 const prisma = new PrismaClient();
 
-const POLL_MS   = Number(process.env.POLL_INTERVAL_MS || 60_000);
-const WINDOWS   = Number(process.env.WINDOWS_PER_HOUR   || 6);
+const POLL_MS = Number(process.env.POLL_INTERVAL_MS || 60_000);
+const WINDOWS = Number(process.env.WINDOWS_PER_HOUR || 6);
 const WINDOW_MS = (60 * 60 * 1000) / WINDOWS;
 const MAX_ATTEMPTS = Number(process.env.MAX_EMAIL_ATTEMPTS || 3);
 
 export async function processNextBatch() {
-  console.log('▶ Processing next batch');
+  console.log("▶ Processing next batch");
   const now = new Date();
 
   // 1️⃣ pick ONE due job (row-lock prevents races)
@@ -39,9 +38,9 @@ export async function processNextBatch() {
     where: { id: job.id },
     include: {
       template: {
-        include: { variable: true }
-      }
-    }
+        include: { variable: true },
+      },
+    },
   });
 
   console.log("Full job", fullJob);
@@ -51,10 +50,10 @@ export async function processNextBatch() {
 
   // 3️⃣ pull next leads
   const leads = await prisma.bulkEmailJobLead.findMany({
-    where: { jobId: job.id, status: 'QUEUED' },
+    where: { jobId: job.id, status: "QUEUED" },
     include: { lead: true },
     take: batchSize,
-    orderBy: { id: 'asc' }
+    orderBy: { id: "asc" },
   });
 
   console.log("lead", leads);
@@ -63,12 +62,12 @@ export async function processNextBatch() {
   if (leads.length === 0) {
     await prisma.bulkEmailJob.update({
       where: { id: job.id },
-      data: { status: 'COMPLETED', completedAt: now }
+      data: { status: "COMPLETED", completedAt: now },
     });
     if (fullJob.campaignId) {
       await prisma.emailCampaign.update({
         where: { id: fullJob.campaignId },
-        data: { status: 'COMPLETED' }
+        data: { status: "COMPLETED" },
       });
     }
     return;
@@ -78,79 +77,106 @@ export async function processNextBatch() {
   console.log("batchSize", batchSize);
 
   // 4️⃣ render & send via your sendEmail() service
-  const sendResults = await Promise.all(leads.map(async jl => {
-    const { lead } = jl;
-    const payloadVars = { 
-      ...lead, 
-      // if you have custom variable defaults, merge them here
-    };
-    const renderedSubject = mustache.render(fullJob.template.subject, payloadVars);
-    const renderedHtml    = mustache.render(fullJob.template.body,    payloadVars);
+  const sendResults = await Promise.all(
+    leads.map(async (jl) => {
+      const { lead } = jl;
+      const payloadVars = {
+        ...lead,
+        // if you have custom variable defaults, merge them here
+      };
+      const renderedSubject = mustache.render(
+        fullJob.template.subject,
+        payloadVars
+      );
+      const renderedHtml = mustache.render(fullJob.template.body, payloadVars);
 
+      console.log("renderedSubject", renderedSubject);
+      console.log("renderedHtml", renderedHtml);
 
-    console.log("renderedSubject", renderedSubject);
-    console.log("renderedHtml", renderedHtml);
-
-    try {
-      await sendEmail({
-        fromEmail: fullJob.template.from,
-        toEmail:    lead.contactEmail[0],
-        subject:    renderedSubject,
-        htmlBody:   renderedHtml,
-        // configurationSetName: fullJob.configurationSetName, // if you track per-job/campaign
-      });
-      return { jlId: jl.id, leadId: lead.id, status: 'SENT', attempts: jl.attempts + 1 };
-    } catch (err) {
-      console.error('Error sending to', lead.contactEmail[0], err);
-      return { jlId: jl.id, leadId: lead.id, status: 'FAILED', attempts: jl.attempts + 1  };
-    }
-  }));
+      try {
+        await sendEmail({
+          fromEmail: fullJob.template.from,
+          toEmail: lead.contactEmail[0],
+          subject: renderedSubject,
+          htmlBody: renderedHtml,
+          // configurationSetName: fullJob.configurationSetName, // if you track per-job/campaign
+        });
+        return {
+          jlId: jl.id,
+          leadId: lead.id,
+          status: "SENT",
+          attempts: jl.attempts + 1,
+        };
+      } catch (err) {
+        console.error("Error sending to", lead.contactEmail[0], err);
+        return {
+          jlId: jl.id,
+          leadId: lead.id,
+          status: "FAILED",
+          attempts: jl.attempts + 1,
+        };
+      }
+    })
+  );
 
   // 5️⃣ persist all outcomes in one transaction
-  await prisma.$transaction(async tx => {
+  await prisma.$transaction(async (tx) => {
     for (const r of sendResults) {
-      const stillHasRetries = r.status === 'FAILED' && r.attempts < MAX_ATTEMPTS;
+      const stillHasRetries =
+        r.status === "FAILED" && r.attempts < MAX_ATTEMPTS;
 
       await tx.bulkEmailJobLead.update({
         where: { id: r.jlId },
         data: {
-          status:   stillHasRetries ? 'QUEUED' : r.status,
+          status: stillHasRetries ? "QUEUED" : r.status,
           attempts: { increment: 1 },
-          sentAt:   r.status === 'SENT' ? now : undefined
-        }
+          sentAt: r.status === "SENT" ? now : undefined,
+        },
       });
-      await tx.emailLog.create({
+      await tx.emailMessage.create({
         data: {
-          tenantId:   fullJob.tenantId,
+          tenantId: fullJob.tenantId,
+          conversationId: null, // bulk sends usually aren’t threaded
+          direction: "OUTBOUND",
+          provider: "AWS_SES",
+          providerMessageId: null, // fill later if SES returns MessageId
+          subject: fullJob.template.subject,
+          from: [fullJob.template.from],
+          to: [lead.contactEmail[0]],
+          html: fullJob.template.body,
+          plusToken: null,
+          sentAt: r.status === "SENT" ? now : null,
           campaignId: fullJob.campaignId,
-          leadId:     r.leadId,
-          status:     r.status,
-          sentAt:     r.status === 'SENT' ? now : undefined
-        }
+          leadId: r.leadId,
+          verdicts: {},
+          headers: {},
+        },
       });
     }
 
     // recalc progress & schedule next window
-    const processed   = await tx.bulkEmailJobLead.count({
-      where: { jobId: job.id, status: { not: 'QUEUED' } }
+    const processed = await tx.bulkEmailJobLead.count({
+      where: { jobId: job.id, status: { not: "QUEUED" } },
     });
     const stillQueued = fullJob.total - processed;
 
     await tx.bulkEmailJob.update({
       where: { id: job.id },
       data: {
-        progress:        processed,
-        status:          stillQueued ? 'QUEUED' : 'COMPLETED',
-        nextProcessTime: stillQueued ? new Date(now.getTime() + WINDOW_MS) : null,
-        completedAt:     stillQueued ? null : now
-      }
+        progress: processed,
+        status: stillQueued ? "QUEUED" : "COMPLETED",
+        nextProcessTime: stillQueued
+          ? new Date(now.getTime() + WINDOW_MS)
+          : null,
+        completedAt: stillQueued ? null : now,
+      },
     });
 
     // update campaign state as well
     if (fullJob.campaignId) {
       await tx.emailCampaign.update({
         where: { id: fullJob.campaignId },
-        data: { status: stillQueued ? 'ACTIVE' : 'COMPLETED' }
+        data: { status: stillQueued ? "ACTIVE" : "COMPLETED" },
       });
     }
   });
@@ -158,16 +184,21 @@ export async function processNextBatch() {
 
 // Bootstraps the polling loop; no manual intervention needed
 export function startEmailWorker() {
-  console.log('▶ Email worker started');
+  console.log("▶ Email worker started");
   processNextBatch().catch(console.error);
-  const id = setInterval(() => processNextBatch().catch(console.error), POLL_MS);
-  
+  const id = setInterval(
+    () => processNextBatch().catch(console.error),
+    POLL_MS
+  );
+
   // clean shutdown
-  const shutdown = () => { clearInterval(id); prisma.$disconnect(); process.exit(0); };
-  process.on('SIGINT', shutdown).on('SIGTERM', shutdown);
+  const shutdown = () => {
+    clearInterval(id);
+    prisma.$disconnect();
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown).on("SIGTERM", shutdown);
 }
-
-
 
 // import { PrismaClient } from '@prisma/client';
 // const prisma = new PrismaClient();

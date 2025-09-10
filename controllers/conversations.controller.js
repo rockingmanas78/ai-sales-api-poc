@@ -1,5 +1,5 @@
 // controllers/conversation.controller.js
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 // helpers
@@ -7,11 +7,15 @@ const toInt = (v, d) => {
   const n = parseInt(v, 10);
   return Number.isFinite(n) && n > 0 ? n : d;
 };
-const stripHtml = (html = '') => String(html).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-const  makeSnippet = (msg) => {
+const stripHtml = (html = "") =>
+  String(html)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+const makeSnippet = (msg) => {
   if (!msg) return null;
-  const text = (msg.text && msg.text.trim()) || stripHtml(msg.html || '') || '';
-  return text.length > 240 ? text.slice(0, 240) + '…' : text;
+  const text = (msg.text && msg.text.trim()) || stripHtml(msg.html || "") || "";
+  return text.length > 240 ? text.slice(0, 240) + "…" : text;
 };
 
 /**
@@ -22,20 +26,20 @@ const  makeSnippet = (msg) => {
 export async function listConversations(req, res, next) {
   try {
     const tenantId = req.user?.tenantId;
-    if (!tenantId) return res.status(401).json({ error: 'unauthorized' });
+    if (!tenantId) return res.status(401).json({ error: "unauthorized" });
 
     const page = toInt(req.query.page, 1);
     const pageSize = Math.min(toInt(req.query.pageSize, 20), 100);
     const skip = (page - 1) * pageSize;
-    const query = (req.query.query || '').trim();
+    const query = (req.query.query || "").trim();
 
     const where = {
       tenantId,
       ...(query
         ? {
             OR: [
-              { subject: { contains: query, mode: 'insensitive' } },
-              { participants: { has: query } },   // exact email match in array
+              { subject: { contains: query, mode: "insensitive" } },
+              { participants: { has: query } }, // exact email match in array
             ],
           }
         : {}),
@@ -44,7 +48,7 @@ export async function listConversations(req, res, next) {
     const [items, total] = await prisma.$transaction([
       prisma.conversation.findMany({
         where,
-        orderBy: { lastMessageAt: 'desc' },
+        orderBy: { lastMessageAt: "desc" },
         skip,
         take: pageSize,
         select: {
@@ -57,7 +61,7 @@ export async function listConversations(req, res, next) {
           updatedAt: true,
           EmailMessage: {
             take: 1,
-            orderBy: { createdAt: 'desc' },
+            orderBy: { createdAt: "desc" },
             select: {
               id: true,
               direction: true,
@@ -80,7 +84,7 @@ export async function listConversations(req, res, next) {
       participants: c.participants,
       firstMessageAt: c.firstMessageAt,
       lastMessageAt: c.lastMessageAt,
-      preview:  makeSnippet(c.EmailMessage[0]),
+      preview: makeSnippet(c.EmailMessage[0]),
       lastDirection: c.EmailMessage[0]?.direction || null,
     }));
 
@@ -103,10 +107,11 @@ export async function listConversations(req, res, next) {
 export async function getConversationMessages(req, res, next) {
   try {
     const tenantId = req.user?.tenantId;
-    if (!tenantId) return res.status(401).json({ error: 'unauthorized' });
+    if (!tenantId) return res.status(401).json({ error: "unauthorized" });
 
     const { conversationId } = req.params;
-    const sort = (req.query.sort || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc';
+    const sort =
+      (req.query.sort || "asc").toLowerCase() === "desc" ? "desc" : "asc";
     const page = toInt(req.query.page, 1);
     const pageSize = Math.min(toInt(req.query.pageSize, 50), 200);
     const skip = (page - 1) * pageSize;
@@ -116,7 +121,8 @@ export async function getConversationMessages(req, res, next) {
       where: { id: conversationId, tenantId },
       select: { id: true },
     });
-    if (!convo) return res.status(404).json({ error: 'conversation not found' });
+    if (!convo)
+      return res.status(404).json({ error: "conversation not found" });
 
     const [items, total] = await prisma.$transaction([
       prisma.emailMessage.findMany({
@@ -148,7 +154,6 @@ export async function getConversationMessages(req, res, next) {
           createdAt: true,
           campaignId: true,
           leadId: true,
-          emailLogId: true,
         },
       }),
       prisma.emailMessage.count({ where: { tenantId, conversationId } }),

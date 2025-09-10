@@ -1,74 +1,129 @@
-// controllers/sns.controller.js
 import axios from "axios";
-import MessageValidator from "sns-validator";
+import SnsValidator from "sns-validator";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
-const validator = new MessageValidator();
+const snsValidator = new SnsValidator();
 
-const EXPECTED_TOPIC_ARNS = (process.env.SEND_EVENTS_TOPIC_ARNS || "").split(",").map(s => s.trim()).filter(Boolean);
+// allowlist expected topics
+const EXPECTED_TOPIC_ARNS = process.env.SNS_TOPIC_ARNS
+  ? process.env.SNS_TOPIC_ARNS.split(",")
+  : [];
 
 export const handleSnsEvent = async (req, res) => {
   try {
-    // Accept raw Buffer, stringified JSON, or parsed object
+    // 1) Normalize body
     const bodyStr = Buffer.isBuffer(req.body)
       ? req.body.toString("utf-8")
-      : (typeof req.body === "string" ? req.body : JSON.stringify(req.body));
+      : typeof req.body === "string"
+      ? req.body
+      : JSON.stringify(req.body);
 
     let snsMessage;
-    try { snsMessage = JSON.parse(bodyStr); }
-    catch { return res.status(400).send("Invalid JSON body"); }
+    try {
+      snsMessage = JSON.parse(bodyStr);
+    } catch {
+      return res.status(400).send("Invalid JSON body");
+    }
 
-    // 1) Verify SNS signature (AWS guidance)
+    // 2) Verify SNS signature
     await new Promise((resolve, reject) => {
-      validator.validate(snsMessage, (err) => err ? reject(err) : resolve());
+      snsValidator.validate(snsMessage, (err) =>
+        err ? reject(err) : resolve()
+      );
     });
 
-    // 2) Allowlist TopicArn
-    if (EXPECTED_TOPIC_ARNS.length && !EXPECTED_TOPIC_ARNS.includes(snsMessage.TopicArn)) {
+    // 3) Allowlist TopicArn
+    if (
+      EXPECTED_TOPIC_ARNS.length &&
+      !EXPECTED_TOPIC_ARNS.includes(snsMessage.TopicArn)
+    ) {
       return res.status(403).send("Unexpected TopicArn");
     }
 
-    // 3) Handle SubscriptionConfirmation
-    if (snsMessage.Type === "SubscriptionConfirmation" && snsMessage.SubscribeURL) {
+    // 4) Handle subscription confirmation
+    if (
+      snsMessage.Type === "SubscriptionConfirmation" &&
+      snsMessage.SubscribeURL
+    ) {
       await axios.get(snsMessage.SubscribeURL);
       return res.status(200).send("Subscription confirmed");
     }
 
-    if (snsMessage.Type !== "Notification") return res.status(200).send("OK");
+    if (snsMessage.Type !== "Notification") {
+      return res.status(200).send("OK");
+    }
 
-    // 4) Process SES sending event
+    // 5) Parse SES notification
     const sesEvent = JSON.parse(snsMessage.Message);
     const eventType = sesEvent?.eventType;
     const msgId = sesEvent?.mail?.messageId;
     if (!msgId) return res.status(200).send("No messageId");
 
-    const log = await prisma.emailLog.findFirst({
-      where: { providerMessageId: msgId }
+    // Find related emailMessage
+    const emailMessage = await prisma.emailMessage.findFirst({
+      where: { providerMessageId: msgId },
+      select: { id: true, tenantId: true },
     });
+    if (!emailMessage) {
+      console.warn(`⚠️ No emailMessage found for SES msgId=${msgId}`);
+      return res.status(200).send("No matching emailMessage");
+    }
 
     const now = new Date();
+
+    // 6) Record event in emailEvent table
+    await prisma.emailEvent.create({
+      data: {
+        tenantId: emailMessage.tenantId,
+        messageId: emailMessage.id,
+        type: eventType.toUpperCase(), // e.g. "DELIVERY", "OPEN", "CLICK"
+        providerMessageId: msgId,
+        createdAt: now,
+        metadata: sesEvent,
+      },
+    });
+
+    // 7) Optionally update denormalized columns in emailMessage
     switch (eventType) {
       case "Send":
-        if (log) await prisma.emailLog.update({ where: { id: log.id }, data: { status: "SENT", sentAt: log.sentAt ?? now } });
+        await prisma.emailMessage.update({
+          where: { id: emailMessage.id },
+          data: { sentAt: now },
+        });
         break;
       case "Delivery":
-        if (log) await prisma.emailLog.update({ where: { id: log.id }, data: { status: "SENT" } });
+        await prisma.emailMessage.update({
+          where: { id: emailMessage.id },
+          data: { deliveredAt: now },
+        });
         break;
       case "Open":
-        if (log) await prisma.emailLog.update({ where: { id: log.id }, data: { status: "OPENED", openedAt: log.openedAt ?? now } });
+        await prisma.emailMessage.update({
+          where: { id: emailMessage.id },
+          data: { openedAt: { set: now } },
+        });
         break;
       case "Click":
-        if (log) await prisma.emailLog.update({ where: { id: log.id }, data: { status: "CLICKED", clickedAt: log.clickedAt ?? now } });
+        await prisma.emailMessage.update({
+          where: { id: emailMessage.id },
+          data: { clickedAt: { set: now } },
+        });
         break;
       case "Bounce":
-        if (log) await prisma.emailLog.update({ where: { id: log.id }, data: { status: "BOUNCED" } });
+        await prisma.emailMessage.update({
+          where: { id: emailMessage.id },
+          data: { bouncedAt: now },
+        });
         break;
       case "Complaint":
-        if (log) await prisma.emailLog.update({ where: { id: log.id }, data: { status: "FAILED" } });
+        await prisma.emailMessage.update({
+          where: { id: emailMessage.id },
+          data: { failedAt: now },
+        });
         break;
       default:
-        // ignore others
+        // ignore unknowns
         break;
     }
 
@@ -78,7 +133,6 @@ export const handleSnsEvent = async (req, res) => {
     return res.status(500).send("Internal server error");
   }
 };
-
 
 // import axios from 'axios';
 
