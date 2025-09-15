@@ -26,19 +26,19 @@ export const searchAndExtract = async (req, res) => {
     console.log("Endpoint", `${AI_SERVICE_ENDPOINT}/api/extract/search`);
     // AI service ko call karein
     // 2. Create a record of the job in your database first
-    const newJob = await prisma.leadGenerationJob.create({
-      data: {
-        tenantId: tenantId,
-        prompt: prompt,
-        status: "QUEUED", // Set an initial status
-        totalRequested: num_results,
-      },
-    });
+    // const newJob = await prisma.leadGenerationJob.create({
+    //   data: {
+    //     tenantId: tenantId,
+    //     prompt: prompt,
+    //     status: "QUEUED", // Set an initial status
+    //     totalRequested: num_results,
+    //   },
+    // });
 
     // 3. Call the AI service to start the job
     const { data } = await axios.post(
       `${AI_SERVICE_ENDPOINT}/api/extract/search`,
-      { prompt, num_results, offset },
+      { prompt, num_results, offset, contact_focus: "email", exclude_aggregators: false },
       {
         headers: {
           Authorization: incomingAuth,
@@ -49,12 +49,12 @@ export const searchAndExtract = async (req, res) => {
     console.log("AI service returned data:", data);
 
     // Optionally, update your job record with the batchId from the AI service
-    if (data.job_id) {
-      await prisma.leadGenerationJob.update({
-        where: { id: newJob.id },
-        data: { batchId: data.job_id, status: "PROCESSING" },
-      });
-    }
+    // if (data.job_id) {
+    //   await prisma.leadGenerationJob.update({
+    //     where: { id: newJob.id },
+    //     data: { batchId: data.job_id, status: "PROCESSING" },
+    //   });
+    // }
 
     return res.status(200).json(data);
   } catch (err) {
