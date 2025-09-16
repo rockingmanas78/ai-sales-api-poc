@@ -95,6 +95,9 @@ export const createCampaign = async (req, res) => {
   }
 };
 // Get All Campaigns for a Tenant
+
+// Get All Campaigns for a Tenant with stats
+// Get All Campaigns for a Tenant with email stats from BulkEmailJobLead
 export const getCampaigns = async (req, res) => {
   try {
     const { tenantId } = req.params;
@@ -103,16 +106,61 @@ export const getCampaigns = async (req, res) => {
       return res.status(400).json({ error: "tenantId is required in query" });
     }
 
+    // Base campaigns
     const campaigns = await prisma.emailCampaign.findMany({
       where: { tenantId },
-      include: {
-        template: true,
-        EmailMessage: true,
-      },
+      include: { template: true },
       orderBy: { createdAt: "desc" },
     });
 
-    res.json(campaigns);
+    const campaignsWithStats = await Promise.all(
+      campaigns.map(async (campaign) => {
+        // Aggregate job-lead counts by status for this campaign
+        const grouped = await prisma.bulkEmailJobLead.groupBy({
+          by: ["status"],
+          where: { job: { campaignId: campaign.id } },
+          _count: { _all: true },
+        });
+
+        // Convert to lookup { STATUS: count }
+        const statusCounts = grouped.reduce((acc, g) => {
+          acc[g.status] = g._count._all ?? 0;
+          return acc;
+        }, {});
+
+        const count = (s) => statusCounts[s] ?? 0;
+
+        const totalEmails =
+          Object.values(statusCounts).reduce((a, b) => a + b, 0) || 0;
+
+        // Sent = anything that actually went out (exclude queued/failed/bounced)
+        const emailsSent =
+          count("SENT") + count("OPENED") + count("CLICKED") + count("REPLIED");
+
+        // Failures (delivery failed or bounced)
+        const emailsFailed = count("FAILED") + count("BOUNCED");
+
+        // Engagements from statuses
+        const opened = count("OPENED") + count("CLICKED") + count("REPLIED");
+        const replied = count("REPLIED");
+
+        const openRate = emailsSent > 0 ? Number(((opened / emailsSent) * 100).toFixed(2)) : 0;
+        const replyRate = emailsSent > 0 ? Number(((replied / emailsSent) * 100).toFixed(2)) : 0;
+
+        return {
+          ...campaign,
+          stats: {
+            totalEmails,
+            emailsSent,
+            emailsFailed,
+            openRate,
+            replyRate,
+          },
+        };
+      })
+    );
+
+    res.json(campaignsWithStats);
   } catch (error) {
     console.error("Error fetching campaigns:", error);
     res.status(500).json({ error: "Internal server error" });
