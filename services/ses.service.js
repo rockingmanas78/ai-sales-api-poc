@@ -353,7 +353,8 @@ export async function processInbound(evt) {
     // ---- 6) Transactional upserts
     let conversationId; // we'll capture this for logging
 
-    await prisma.$transaction(async (tx) => {
+     let inboundMessageId = null;
+     await prisma.$transaction(async (tx) => {
       // (a) Upsert/merge Conversation by preferred key
       //     If there exists a convo under RFC keys (inReplyTo or referencesTail), migrate it to preferred.
       let conversation = await tx.conversation.findUnique({
@@ -442,7 +443,7 @@ export async function processInbound(evt) {
       }
 
       // (c) Idempotent INBOUND EmailMessage
-      await tx.emailMessage.upsert({
+      const inboundMessage = await tx.emailMessage.upsert({
         where: {
           tenantId_providerMessageId: {
             tenantId,
@@ -474,12 +475,16 @@ export async function processInbound(evt) {
           leadId: originatingMessage?.leadId || null,
         },
         update: {}, // idempotent
+        select: { id: true },
       });
+
+      inboundMessageId = inboundMessage.id;
 
       // (d) Nothing else to write here; events pipeline (opens/clicks/etc.) handled by SES Events Lambda
     }, { timeout: 15_000 });
 
-    console.log("processInbound: OK", { tenantId, conversationId });
+    console.log("processInbound: OK", { tenantId, conversationId, inboundMessageId });
+    return { tenantId, conversationId, inboundMessageId };
   } catch (err) {
     console.error("processInbound failed:", err);
   }

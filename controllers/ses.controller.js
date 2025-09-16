@@ -9,6 +9,7 @@ import {
   initiateSubdomainIdentity,
   processInbound,
 } from "../services/ses.service.js";
+import { runPostInboundAutomation } from "../services/ai.service.js";
 
 // POST /ses/onboard-domain
 export async function onboardDomain(req, res, next) {
@@ -463,7 +464,18 @@ export async function inboundWebhook(req, res, next) {
     // Do the heavy work off the response lifecycle
     setImmediate(async () => {
       try {
-        await processInbound(req.body); // your existing logic
+         const result = await processInbound(req.body); // now returns IDs
+         if (result?.inboundMessageId && result?.conversationId && result?.tenantId) {
+           try {
+             await runPostInboundAutomation({
+               tenantId: result.tenantId,
+               conversationId: result.conversationId,
+               inboundMessageId: result.inboundMessageId,
+             });
+           } catch (aiErr) {
+             console.error("post-inbound AI automation failed", aiErr);
+           }
+         }
       } catch (e) {
         console.error("processInbound failed", e);
       }
