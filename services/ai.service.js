@@ -50,18 +50,6 @@ function stripHtml(html) {
 }
 
 /**
- * Build Authorization header for AI service.
- * Prefer a dedicated service token; fallback to req-sourced token if you pass one.
- */
-function buildAIAuthHeader(passthroughToken) {
-  const token = passthroughToken || process.env.AI_SERVICE_TOKEN;
-  if (!token) {
-    throw new Error("AI service token missing (AI_SERVICE_TOKEN not set).");
-  }
-  return { Authorization: `Bearer ${token}` };
-}
-
-/**
  * Main entrypoint: run sentiment analysis and schedule AI reply
  * Idempotent per inbound message: uses EmailMessage.verdicts flags to skip repeats.
  */
@@ -127,12 +115,12 @@ export async function runPostInboundAutomation({
   let sentiment = "FOLLOW UP";
   try {
     const { data } = await axios.post(
-      `${AI_SERVICE_ENDPOINT}/email/analyse`,
+      `${AI_SERVICE_ENDPOINT}/api/email/analyse`,
       { subject: inbound.subject || "", body: latestEmailPlain || "" },
       {
         headers: {
           "Content-Type": "application/json",
-          ...buildAIAuthHeader(passthroughAuthToken),
+          "Authorization": req.headers.authorization,
         },
         timeout: 10_000,
       }
@@ -177,7 +165,7 @@ export async function runPostInboundAutomation({
   if (senderEmail && recipientEmails.length > 0) {
     try {
       const response = await axios.post(
-        `${AI_SERVICE_ENDPOINT}/email/generate`,
+        `${AI_SERVICE_ENDPOINT}/api/email/generate`,
         {
           conversation_id: conversationId,
           campaign_id: inbound.campaignId || "",
@@ -190,7 +178,7 @@ export async function runPostInboundAutomation({
         {
           headers: {
             "Content-Type": "application/json",
-            ...buildAIAuthHeader(passthroughAuthToken),
+            "Authorization": passthroughAuthToken || "", // forward user's JWT if available
           },
           timeout: 20_000,
         }

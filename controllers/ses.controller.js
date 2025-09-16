@@ -471,6 +471,7 @@ export async function inboundWebhook(req, res, next) {
                tenantId: result.tenantId,
                conversationId: result.conversationId,
                inboundMessageId: result.inboundMessageId,
+               passthroughAuthToken: req.headers.authorization,
              });
            } catch (aiErr) {
              console.error("post-inbound AI automation failed", aiErr);
