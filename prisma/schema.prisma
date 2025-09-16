@@ -142,15 +142,17 @@ model CampaignLead {
 }
 
 model User {
-  id           String    @id @default(uuid())
-  tenantId     String
-  email        String    @unique
-  passwordHash String
-  role         UserRole  @default(MANAGER)
-  verified     Boolean   @default(false)
-  createdAt    DateTime  @default(now())
-  deletedAt    DateTime?
-  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  id            String    @id @default(uuid())
+  tenantId      String
+  email         String    @unique
+  passwordHash  String
+  role          UserRole  @default(MANAGER)
+  verified      Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  deletedAt     DateTime?
+  oauthProvider String?   @db.VarChar(32)
+  oauthId       String?
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
 }
 
 model Lead {

@@ -1,40 +1,56 @@
-import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
-import { generateTokens } from '../utils/generateTokens.js';
+import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
+import { generateTokens } from "../utils/generateTokens.js";
 
 const prisma = new PrismaClient();
 
 // POST /tenant/create
 // controllers/auth/register.js
 
-import { addMonths } from 'date-fns';
-import { mapCountryToZone } from '../middlewares/geo-detect.js';
+import { addMonths } from "date-fns";
+import { mapCountryToZone } from "../middlewares/geo-detect.js";
 //import payments from '../../libs/payments/index.js';
-
-
 
 export const createTenant = async (req, res) => {
   try {
-    const { name, email, password, versionId, onboardingRole, hear_about_us, primary_goal } = req.body;
+    const {
+      name,
+      email,
+      password,
+      versionId,
+      onboardingRole,
+      hear_about_us,
+      primary_goal,
+    } = req.body;
     const countryCode = req.headers["x-user-zone"];
     console.log(countryCode);
 
-    if (!name || !email || !password || !countryCode) {
-      return res.status(400).json({ message: 'Name, email, password, and countryCode are required' });
+    if (!name || !email || !countryCode) {
+      return res.status(400).json({
+        message: "Name, email, password, and countryCode are required",
+      });
     }
 
-    if (!versionId) {
-      return res.status(400).json({ message: 'versionId is required' });
+    let finalVersionId = versionId;
+    if (!finalVersionId) {
+      // Get the latest planVersion (by createdAt desc)
+      const latestVersion = await prisma.planVersion.findFirst({
+        orderBy: { createdAt: "desc" },
+      });
+      if (!latestVersion) {
+        return res.status(400).json({ message: "No plan versions available" });
+      }
+      finalVersionId = latestVersion.id;
     }
 
     // Get plan version and plan code
-    const  planVersionRecord = await prisma.planVersion.findUnique({
-      where: { id: versionId },
+    const planVersionRecord = await prisma.planVersion.findUnique({
+      where: { id: finalVersionId },
       include: { Plan: true },
     });
 
     if (!planVersionRecord) {
-      return res.status(400).json({ message: 'Invalid plan version' });
+      return res.status(400).json({ message: "Invalid plan version" });
     }
 
     const planCode = planVersionRecord.Plan.code;
@@ -42,7 +58,7 @@ export const createTenant = async (req, res) => {
     // Check for existing user
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({ message: "User already exists" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -63,9 +79,9 @@ export const createTenant = async (req, res) => {
       const subscription = await tx.subscription.create({
         data: {
           tenantId: tenant.id,
-          planVersionId: versionId,
+          planVersionId: finalVersionId,
           zone,
-          status: 'ACTIVE',
+          status: "ACTIVE",
           currentStart: new Date(),
           currentEnd: addMonths(new Date(), 1),
         },
@@ -77,18 +93,18 @@ export const createTenant = async (req, res) => {
           email,
           passwordHash: hashedPassword,
           tenantId: tenant.id,
-          role: 'ADMIN',
+          role: "ADMIN",
         },
       });
 
-      const updatedAt= new Date();
+      const updatedAt = new Date();
       const onboarding = await tx.tenantOnboarding.upsert({
         where: { tenant_id: tenant.id },
         update: {
           role: onboardingRole,
           hear_about_us,
           primary_goal,
-          updated_at: updatedAt
+          updated_at: updatedAt,
         },
         create: {
           tenant_id: tenant.id,
@@ -105,13 +121,14 @@ export const createTenant = async (req, res) => {
     const token = generateTokens(user);
     const { passwordHash, ...userWithoutPassword } = user;
 
-    res.status(201).json({ user: userWithoutPassword, tenant, token, onboarding });
+    res
+      .status(201)
+      .json({ user: userWithoutPassword, tenant, token, onboarding });
   } catch (error) {
-    console.error('Error in registerUserAndTenant:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error in registerUserAndTenant:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
-
 
 // GET /tenant/all
 export const getAllTenant = async (req, res) => {
@@ -131,13 +148,13 @@ export const getAllTenant = async (req, res) => {
         campaigns: { select: { id: true } },
         jobs: { select: { id: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     res.json(tenants);
   } catch (error) {
-    console.error('Error fetching tenants:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error fetching tenants:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -158,13 +175,13 @@ export const getTenantProfile = async (req, res) => {
     });
 
     if (!tenant) {
-      return res.status(404).json({ error: 'Tenant not found or deleted' });
+      return res.status(404).json({ error: "Tenant not found or deleted" });
     }
 
     res.json(tenant);
   } catch (error) {
-    console.error('Error fetching tenant profile:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error fetching tenant profile:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -179,10 +196,10 @@ export const updateTenantProfile = async (req, res) => {
     });
 
     if (!existing) {
-      return res.status(404).json({ error: 'Tenant not found or deleted' });
+      return res.status(404).json({ error: "Tenant not found or deleted" });
     }
 
-    if ('deletedAt' in updates) {
+    if ("deletedAt" in updates) {
       delete updates.deletedAt;
     }
 
@@ -193,8 +210,8 @@ export const updateTenantProfile = async (req, res) => {
 
     res.json(updatedTenant);
   } catch (error) {
-    console.error('Error updating tenant:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error updating tenant:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -208,7 +225,9 @@ export const softDeleteTenant = async (req, res) => {
     });
 
     if (!existing) {
-      return res.status(404).json({ error: 'Tenant not found or already deleted' });
+      return res
+        .status(404)
+        .json({ error: "Tenant not found or already deleted" });
     }
 
     await prisma.tenant.update({
@@ -216,19 +235,27 @@ export const softDeleteTenant = async (req, res) => {
       data: { deletedAt: new Date() },
     });
 
-    res.json({ message: 'Tenant soft deleted successfully' });
+    res.json({ message: "Tenant soft deleted successfully" });
   } catch (error) {
-    console.error('Error soft deleting tenant:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error soft deleting tenant:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
 // GET /tenant/plans
 export const getAvailablePlans = async (req, res) => {
   const plans = [
-    { tier: 'FREE', price: 0, description: 'Free tier with limited features' },
-    { tier: 'PRO', price: 49, description: 'Advanced features for growing teams' },
-    { tier: 'ENTERPRISE', price: 199, description: 'Full feature set with premium support' },
+    { tier: "FREE", price: 0, description: "Free tier with limited features" },
+    {
+      tier: "PRO",
+      price: 49,
+      description: "Advanced features for growing teams",
+    },
+    {
+      tier: "ENTERPRISE",
+      price: 199,
+      description: "Full feature set with premium support",
+    },
   ];
 
   res.json(plans);

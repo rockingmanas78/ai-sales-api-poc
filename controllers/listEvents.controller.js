@@ -1,8 +1,8 @@
 // controllers/listEvents.controller.js
-import { createRequire } from 'module';
+import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 function parseIsoDateOrNull(s) {
@@ -14,9 +14,18 @@ function parseIsoDateOrNull(s) {
   }
 }
 
-export default async function listEvents(req, res) {
+export async function listEvents(req, res) {
   try {
-    const { event_name, user_id, anonymous_id, tenant_id, since, until, limit, cursor } = req.query;
+    const {
+      event_name,
+      user_id,
+      anonymous_id,
+      tenant_id,
+      since,
+      until,
+      limit,
+      cursor,
+    } = req.query;
 
     const where = {};
     if (event_name) where.event_name = String(event_name);
@@ -36,12 +45,15 @@ export default async function listEvents(req, res) {
       }
     }
 
-    const take = Math.min(Math.max(parseInt(limit || '100', 10) || 100, 1), 500);
+    const take = Math.min(
+      Math.max(parseInt(limit || "100", 10) || 100, 1),
+      500
+    );
 
     let cursorObj = null;
     if (cursor) {
       try {
-        const decoded = Buffer.from(String(cursor), 'base64').toString('utf8');
+        const decoded = Buffer.from(String(cursor), "base64").toString("utf8");
         cursorObj = JSON.parse(decoded);
       } catch {
         // ignore malformed cursor
@@ -50,7 +62,7 @@ export default async function listEvents(req, res) {
 
     const queryOptions = {
       where,
-      orderBy: [{ occurred_at: 'desc' }, { event_id: 'desc' }],
+      orderBy: [{ occurred_at: "desc" }, { event_id: "desc" }],
       take,
       select: {
         event_id: true,
@@ -72,10 +84,12 @@ export default async function listEvents(req, res) {
     let next_cursor = null;
     if (rows.length === take) {
       const last = rows[rows.length - 1];
-      next_cursor = Buffer.from(JSON.stringify({ event_id: last.event_id })).toString('base64');
+      next_cursor = Buffer.from(
+        JSON.stringify({ event_id: last.event_id })
+      ).toString("base64");
     }
 
-    const data = rows.map(r => ({
+    const data = rows.map((r) => ({
       event_id: r.event_id,
       event_name: r.event_name,
       occurred_at: r.occurred_at.toISOString(),
@@ -87,6 +101,29 @@ export default async function listEvents(req, res) {
     return res.json({ data, next_cursor });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ status: 'error', code: 'internal_error', message: 'unexpected error' });
+    return res.status(500).json({
+      status: "error",
+      code: "internal_error",
+      message: "unexpected error",
+    });
+  }
+}
+
+export async function tenantEventList(req, res) {
+  try {
+    const { tenantId } = req.query;
+    if (!tenantId) {
+      return res.status(400).json({ error: "tenantId is required in query" });
+    }
+
+    // Use service to fetch events
+    const { getTenantScheduledEvents } = await import(
+      "../services/tenantEventsList.service.js"
+    );
+    const events = await getTenantScheduledEvents(tenantId);
+    res.json(events);
+  } catch (error) {
+    console.error("Error fetching tenant events:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 }
