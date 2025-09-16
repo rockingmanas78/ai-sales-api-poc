@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { AI_SERVICE_ENDPOINT } from '../constants/endpoints.constants.js';
 import prisma from "../utils/prisma.client.js";
+import { generateAuthToken } from '../utils/generateTokens.js';
 
 /**
  * Sends the email body to the spam-score API and returns a 0–10 score.
@@ -56,8 +57,7 @@ function stripHtml(html) {
 export async function runPostInboundAutomation({
   tenantId,
   conversationId,
-  inboundMessageId,
-  passthroughAuthToken, // optional: if you want to forward a user's JWT
+  inboundMessageId
 }) {
   // 1) Load the inbound email (and some context we need)
   const inbound = await prisma.emailMessage.findFirst({
@@ -120,7 +120,7 @@ export async function runPostInboundAutomation({
       {
         headers: {
           "Content-Type": "application/json",
-          "Authorization": req.headers.authorization,
+          "Authorization": passthroughAuthToken,
         },
         timeout: 10_000,
       }
@@ -134,32 +134,6 @@ export async function runPostInboundAutomation({
   const newLeadStatus = mapSentimentToLeadStatus(sentiment);
 
   console.log("New lead status from sentiment:", { sentiment, newLeadStatus });
-
-  // 4) Persist sentiment + lead status update idempotently
-  // await prisma.$transaction(async (tx) => {
-  //   // update inbound verdicts
-  //   const currentVerdicts = inbound.verdicts || {};
-  //   await tx.emailMessage.update({
-  //     where: { id: inbound.id },
-  //     data: {
-  //       verdicts: {
-  //         ...currentVerdicts,
-  //         aiSentiment: sentiment,
-  //         aiMappedLeadStatus: newLeadStatus,
-  //         aiProcessed: true,
-  //         aiProcessedAt: new Date().toISOString(),
-  //       },
-  //     },
-  //   });
-
-    // update lead if available
-    // if (inbound.leadId) {
-    //   await tx.lead.update({
-    //     where: { id: inbound.leadId },
-    //     data: { status: newLeadStatus },
-    //   });
-    // }
-  // });
 
   // 5) Call /email/generate to create & schedule the reply (only if we have sender+recipients)
   if (senderEmail && recipientEmails.length > 0) {
@@ -186,17 +160,6 @@ export async function runPostInboundAutomation({
 
       console.log("AI /email/generate result:", response.data);
 
-      // mark scheduled in verdicts (idempotency)
-      // await prisma.emailMessage.update({
-      //   where: { id: inbound.id },
-      //   data: {
-      //     verdicts: {
-      //       ...(inbound.verdicts || {}),
-      //       aiReplyScheduled: true,
-      //       aiReplyScheduledAt: new Date().toISOString(),
-      //     },
-      //   },
-      // });
     } catch (err) {
       console.error("AI /email/generate failed", err?.response?.data || err.message);
       // do not throw; we already updated lead status & sentiment
