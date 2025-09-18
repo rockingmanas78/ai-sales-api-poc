@@ -50,6 +50,8 @@ app.use(
   webhookRouter
 );
 
+app.use("/api", snsRoutes);
+
 app.use(express.json());
 
 app.use(
@@ -86,8 +88,6 @@ app.use("/api/campaigns", campaignRouter);
 app.use("/api/email-logs", logRouter);
 app.use("/api/aws", emailRoutes);
 app.use("/api", bulkEmailRouter);
-//app.use('/reports', reportRouter);
-app.use("/api", bodyParser.raw({ type: "*/*" }), snsRoutes);
 app.use("/api/plan", pricingRoute);
 app.use("/api/subscription", updateSubscriptionRoute);
 app.use("/api", dashboardRouter);
