@@ -7,7 +7,7 @@ const router = express.Router();
 // Only this route uses raw body
 router.post(
   "/aws/sns-events",
-  express.raw({ type: "application/json" }),
+  express.text({ type: ["text/plain", "application/json"] }),
   handleSnsEvent
 );
 
