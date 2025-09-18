@@ -32,6 +32,7 @@ function extractOccurredAt(ses) {
 export const handleSnsEvent = async (req, res) => {
   try {
     // 1) Parse raw SNS envelope
+    console.log(req.body);
     const rawBody =
       Buffer.isBuffer(req.body) ? req.body.toString("utf-8") : String(req.body);
     const snsMessage = JSON.parse(rawBody);
