@@ -46,6 +46,8 @@ export const handleSnsEvent = async (req, res) => {
       return res.status(400).send("Invalid JSON");
     }
 
+    console.log("Parsed SNS body:", parsed);
+
     // Detect envelope vs RAW:
     // - Standard SNS envelope has Type/Message/MessageId fields
     const isSnsEnvelope =
