@@ -316,17 +316,22 @@ export async function processInbound(evt) {
       ? splitReferences(evt.references)
       : splitReferences(headerReferences);
 
-    const referencesTail = (referencesList && referencesList.length > 0)
-      ? referencesList[referencesList.length - 1]
-      : null;
+    const referencesTail =
+      referencesList && referencesList.length > 0
+        ? referencesList[referencesList.length - 1]
+        : null;
 
     // ---- 3) Provider message id for idempotency
-    const headerMessageId = cleanMsgId(headers["message-id"] || headers["Message-ID"]);
+    const headerMessageId = cleanMsgId(
+      headers["message-id"] || headers["Message-ID"]
+    );
     const computedProviderMessageId =
       evt.providerMessageId || evt?.s3?.objectKey || headerMessageId;
 
     if (!computedProviderMessageId) {
-      console.warn("processInbound: missing providerMessageId; skipping persist");
+      console.warn(
+        "processInbound: missing providerMessageId; skipping persist"
+      );
       return;
     }
 
@@ -353,137 +358,148 @@ export async function processInbound(evt) {
     // ---- 6) Transactional upserts
     let conversationId; // we'll capture this for logging
 
-     let inboundMessageId = null;
-     await prisma.$transaction(async (tx) => {
-      // (a) Upsert/merge Conversation by preferred key
-      //     If there exists a convo under RFC keys (inReplyTo or referencesTail), migrate it to preferred.
-      let conversation = await tx.conversation.findUnique({
-        where: { tenantId_threadKey: { tenantId, threadKey: threadKeyPreferred } },
-        select: { id: true, participants: true, subject: true },
-      });
-
-      console.log("Found conversation by preferred key?", conversation);
-
-      if (!conversation) {
-        const alternativeKey = inReplyTo || referencesTail;
-        if (alternativeKey) {
-          const alt = await tx.conversation.findUnique({
-            where: { tenantId_threadKey: { tenantId, threadKey: alternativeKey } },
-            select: { id: true, participants: true, subject: true },
-          });
-          if (alt) {
-            // Merge/migrate alt → preferred (canonical) to avoid future splits
-            const mergedParticipants = Array.from(
-              new Set([...(alt.participants || []), ...participants])
-            );
-            const updated = await tx.conversation.update({
-              where: { id: alt.id },
-              data: {
-                threadKey: threadKeyPreferred,
-                subject: alt.subject ?? evt.subject ?? null,
-                participants: { set: mergedParticipants },
-                lastMessageAt: new Date(),
-                updatedAt: new Date(),
-              },
-              select: { id: true, participants: true, subject: true },
-            });
-            conversation = updated;
-          }
-        }
-      }
-
-      if (!conversation) {
-        // Create new conversation under preferred key
-        conversation = await tx.conversation.create({
-          data: {
-            tenantId,
-            threadKey: threadKeyPreferred,
-            subject: evt.subject ?? null,
-            participants: Array.from(new Set(participants)),
-            firstMessageAt: new Date(),
-            lastMessageAt: new Date(),
+    let inboundMessageId = null;
+    await prisma.$transaction(
+      async (tx) => {
+        // (a) Upsert/merge Conversation by preferred key
+        //     If there exists a convo under RFC keys (inReplyTo or referencesTail), migrate it to preferred.
+        let conversation = await tx.conversation.findUnique({
+          where: {
+            tenantId_threadKey: { tenantId, threadKey: threadKeyPreferred },
           },
           select: { id: true, participants: true, subject: true },
         });
-      } else {
-        // Update existing: only set subject if not already set; always merge participants
-        const mergedParticipants = Array.from(
-          new Set([...(conversation.participants || []), ...participants])
-        );
-        await tx.conversation.update({
-          where: { id: conversation.id },
-          data: {
-            ...(conversation.subject ? {} : { subject: evt.subject ?? null }),
-            participants: { set: mergedParticipants },
-            lastMessageAt: new Date(),
-            updatedAt: new Date(),
-          },
-        });
-      }
 
-      conversationId = conversation.id;
+        console.log("Found conversation by preferred key?", conversation);
 
-      // (b) Locate originating OUTBOUND message (for optional linkage)
-      let originatingMessage = null;
-      if (plusToken) {
-        originatingMessage = await tx.emailMessage.findFirst({
-          where: { tenantId, plusToken, direction: "OUTBOUND" },
-          select: { id: true, campaignId: true, leadId: true },
-        });
-      }
-      if (!originatingMessage && inReplyTo) {
-        originatingMessage = await tx.emailMessage.findFirst({
+        if (!conversation) {
+          const alternativeKey = inReplyTo || referencesTail;
+          if (alternativeKey) {
+            const alt = await tx.conversation.findUnique({
+              where: {
+                tenantId_threadKey: { tenantId, threadKey: alternativeKey },
+              },
+              select: { id: true, participants: true, subject: true },
+            });
+            if (alt) {
+              // Merge/migrate alt → preferred (canonical) to avoid future splits
+              const mergedParticipants = Array.from(
+                new Set([...(alt.participants || []), ...participants])
+              );
+              const updated = await tx.conversation.update({
+                where: { id: alt.id },
+                data: {
+                  threadKey: threadKeyPreferred,
+                  subject: alt.subject ?? evt.subject ?? null,
+                  participants: { set: mergedParticipants },
+                  lastMessageAt: new Date(),
+                  updatedAt: new Date(),
+                },
+                select: { id: true, participants: true, subject: true },
+              });
+              conversation = updated;
+            }
+          }
+        }
+
+        if (!conversation) {
+          // Create new conversation under preferred key
+          conversation = await tx.conversation.create({
+            data: {
+              tenantId,
+              threadKey: threadKeyPreferred,
+              subject: evt.subject ?? null,
+              participants: Array.from(new Set(participants)),
+              firstMessageAt: new Date(),
+              lastMessageAt: new Date(),
+            },
+            select: { id: true, participants: true, subject: true },
+          });
+        } else {
+          // Update existing: only set subject if not already set; always merge participants
+          const mergedParticipants = Array.from(
+            new Set([...(conversation.participants || []), ...participants])
+          );
+          await tx.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              ...(conversation.subject ? {} : { subject: evt.subject ?? null }),
+              participants: { set: mergedParticipants },
+              lastMessageAt: new Date(),
+              updatedAt: new Date(),
+            },
+          });
+        }
+
+        conversationId = conversation.id;
+
+        // (b) Locate originating OUTBOUND message (for optional linkage)
+        let originatingMessage = null;
+        if (plusToken) {
+          originatingMessage = await tx.emailMessage.findFirst({
+            where: { tenantId, plusToken, direction: "OUTBOUND" },
+            select: { id: true, campaignId: true, leadId: true },
+          });
+        }
+        if (!originatingMessage && inReplyTo) {
+          originatingMessage = await tx.emailMessage.findFirst({
+            where: {
+              tenantId,
+              direction: "OUTBOUND",
+              providerMessageId: inReplyTo, // <-- correct field
+            },
+            select: { id: true, campaignId: true, leadId: true },
+          });
+        }
+
+        // (c) Idempotent INBOUND EmailMessage
+        const inboundMessage = await tx.emailMessage.upsert({
           where: {
-            tenantId,
-            direction: "OUTBOUND",
-            providerMessageId: inReplyTo, // <-- correct field
+            tenantId_providerMessageId: {
+              tenantId,
+              providerMessageId: computedProviderMessageId,
+            },
           },
-          select: { id: true, campaignId: true, leadId: true },
-        });
-      }
-
-      // (c) Idempotent INBOUND EmailMessage
-      const inboundMessage = await tx.emailMessage.upsert({
-        where: {
-          tenantId_providerMessageId: {
+          create: {
             tenantId,
+            conversationId: conversation.id,
+            direction: "INBOUND",
+            provider: "AWS_SES",
             providerMessageId: computedProviderMessageId,
+            subject: evt.subject || null,
+            from: fromEmails,
+            to: toEmails,
+            cc: extractEmails(evt.cc),
+            bcc: extractEmails(evt.bcc),
+            text: evt.replyText || evt.fullText || null,
+            html: evt.html || null,
+            headers,
+            verdicts: evt.verdicts || {},
+            inReplyTo,
+            referencesIds: referencesList || [],
+            plusToken: plusToken || null,
+            s3Bucket: evt?.s3?.bucket || null,
+            s3Key: evt?.s3?.objectKey || null,
+            receivedAt: new Date(),
+            campaignId: originatingMessage?.campaignId || null,
+            leadId: originatingMessage?.leadId || null,
           },
-        },
-        create: {
-          tenantId,
-          conversationId: conversation.id,
-          direction: "INBOUND",
-          provider: "AWS_SES",
-          providerMessageId: computedProviderMessageId,
-          subject: evt.subject || null,
-          from: fromEmails,
-          to: toEmails,
-          cc: extractEmails(evt.cc),
-          bcc: extractEmails(evt.bcc),
-          text: evt.replyText || evt.fullText || null,
-          html: evt.html || null,
-          headers,
-          verdicts: evt.verdicts || {},
-          inReplyTo,
-          referencesIds: referencesList || [],
-          plusToken: plusToken || null,
-          s3Bucket: evt?.s3?.bucket || null,
-          s3Key: evt?.s3?.objectKey || null,
-          receivedAt: new Date(),
-          campaignId: originatingMessage?.campaignId || null,
-          leadId: originatingMessage?.leadId || null,
-        },
-        update: {}, // idempotent
-        select: { id: true },
-      });
+          update: {}, // idempotent
+          // select: { id: true },
+        });
 
-      inboundMessageId = inboundMessage.id;
+        inboundMessageId = inboundMessage.id;
 
-      // (d) Nothing else to write here; events pipeline (opens/clicks/etc.) handled by SES Events Lambda
-    }, { timeout: 15_000 });
+        // (d) Nothing else to write here; events pipeline (opens/clicks/etc.) handled by SES Events Lambda
+      },
+      { timeout: 15_000 }
+    );
 
-    console.log("processInbound: OK", { tenantId, conversationId, inboundMessageId });
+    console.log("processInbound: OK", {
+      tenantId,
+      conversationId,
+      inboundMessageId,
+    });
     return { tenantId, conversationId, inboundMessageId };
   } catch (err) {
     console.error("processInbound failed:", err);

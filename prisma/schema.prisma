@@ -33,7 +33,7 @@ model PlanVersion {
 }
 
 model Component {
-  id            String      @id @default(uuid())
+  id            String      @id @default(dbgenerated("gen_random_uuid()"))
   planVersionId String
   metric        MeterMetric
   includedQty   Int
@@ -152,6 +152,10 @@ model User {
   deletedAt     DateTime?
   oauthProvider String?   @db.VarChar(32)
   oauthId       String?
+  name          String?   @db.VarChar(120)
+  phoneNumber   String?   @db.VarChar(32)
+  location      String?   @db.VarChar(120)
+  bio           String?
   tenant        Tenant    @relation(fields: [tenantId], references: [id])
 }
 

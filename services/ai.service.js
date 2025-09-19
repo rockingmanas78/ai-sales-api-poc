@@ -1,7 +1,7 @@
-import axios from 'axios';
-import { AI_SERVICE_ENDPOINT } from '../constants/endpoints.constants.js';
+import axios from "axios";
+import { AI_SERVICE_ENDPOINT } from "../constants/endpoints.constants.js";
 import prisma from "../utils/prisma.client.js";
-import { generateAuthToken } from '../utils/generateTokens.js';
+import { generateAuthToken } from "../utils/generateTokens.js";
 
 /**
  * Sends the email body to the spam-score API and returns a 0–10 score.
@@ -12,8 +12,11 @@ export async function getSpamScore(emailBody, incomingAuth) {
   const url = `${AI_SERVICE_ENDPOINT}/api/get_spam_score`;
   const payload = { email_body: emailBody };
   const resp = await axios.post(url, payload, {
-    headers: { 'Content-Type': 'application/json', Authorization: incomingAuth, },
-    timeout: 5_000
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: incomingAuth,
+    },
+    timeout: 5_000,
   });
   console.log("Status", resp.status);
 
@@ -22,16 +25,16 @@ export async function getSpamScore(emailBody, incomingAuth) {
     throw new Error(`Spam API responded ${resp.status}`);
   }
   // adapt this to resp.data if the shape differs
-  return typeof resp.data === 'number'
-    ? resp.data
-    : resp.data.score;
+  return typeof resp.data === "number" ? resp.data : resp.data.score;
 }
 
 /**
  * Map AI sentiment (free text) to your LeadStatus enum.
  */
 function mapSentimentToLeadStatus(sentimentRaw) {
-  const s = String(sentimentRaw || "").trim().toUpperCase();
+  const s = String(sentimentRaw || "")
+    .trim()
+    .toUpperCase();
 
   if (s.includes("NOT INTERESTED")) return "NOT_INTERESTED";
   if (s.includes("IMMEDIATE")) return "IMMEDIATE_ACTION";
@@ -47,7 +50,10 @@ function mapSentimentToLeadStatus(sentimentRaw) {
  */
 function stripHtml(html) {
   if (!html) return "";
-  return String(html).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return String(html)
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
@@ -57,7 +63,7 @@ function stripHtml(html) {
 export async function runPostInboundAutomation({
   tenantId,
   conversationId,
-  inboundMessageId
+  inboundMessageId,
 }) {
   // 1) Load the inbound email (and some context we need)
   const inbound = await prisma.emailMessage.findFirst({
@@ -77,15 +83,18 @@ export async function runPostInboundAutomation({
   });
 
   if (!inbound) {
-    console.warn("runPostInboundAutomation: inbound message not found", { inboundMessageId, tenantId });
+    console.warn("runPostInboundAutomation: inbound message not found", {
+      inboundMessageId,
+      tenantId,
+    });
     return;
   }
 
   // Idempotency guard: if we already processed AI reply for this inbound, skip
-  if (inbound.verdicts && (inbound.verdicts.aiReplyScheduled || inbound.verdicts.aiProcessed)) {
-    console.log("runPostInboundAutomation: already processed; skipping", { inboundMessageId });
-    return;
-  }
+  // if (inbound.verdicts && (inbound.verdicts.aiReplyScheduled || inbound.verdicts.aiProcessed)) {
+  //   console.log("runPostInboundAutomation: already processed; skipping", { inboundMessageId });
+  //   return;
+  // }
 
   // 2) Determine sender (our side) & recipients (lead side)
   // We reply from the most recent OUTBOUND in this conversation; fall back gracefully.
@@ -99,11 +108,14 @@ export async function runPostInboundAutomation({
   const recipientEmails = inbound.from?.length ? inbound.from : []; // the lead wrote to us; reply to them
 
   if (!senderEmail || recipientEmails.length === 0) {
-    console.warn("runPostInboundAutomation: missing sender or recipient; skipping /generate", {
-      senderEmail,
-      recipientEmails,
-      conversationId,
-    });
+    console.warn(
+      "runPostInboundAutomation: missing sender or recipient; skipping /generate",
+      {
+        senderEmail,
+        recipientEmails,
+        conversationId,
+      }
+    );
   }
 
   const latestEmailPlain =
@@ -120,20 +132,43 @@ export async function runPostInboundAutomation({
       {
         headers: {
           "Content-Type": "application/json",
-          "Authorization": passthroughAuthToken,
+          // "Authorization": passthroughAuthToken,
+          "X-Request-Id": process.env.WEBHOOK_REQUEST_SECRET,
         },
         timeout: 10_000,
       }
     );
-    sentiment = (data?.sentiment || sentiment);
+    sentiment = data?.sentiment || sentiment;
     console.log("AI /email/analyse result:", { sentiment });
   } catch (err) {
-    console.error("AI /email/analyse failed; proceeding with default", err?.response?.data || err.message);
+    console.error(
+      "AI /email/analyse failed; proceeding with default",
+      err?.response?.data || err.message
+    );
   }
 
   const newLeadStatus = mapSentimentToLeadStatus(sentiment);
 
   console.log("New lead status from sentiment:", { sentiment, newLeadStatus });
+
+  // 4) Update the lead's status if we have a leadId
+  if (inbound.leadId) {
+    try {
+      await prisma.lead.update({
+        where: { id: inbound.leadId },
+        data: { status: newLeadStatus },
+      });
+      console.log("Lead status updated:", {
+        leadId: inbound.leadId,
+        newLeadStatus,
+      });
+    } catch (err) {
+      console.error(
+        "Failed to update lead status",
+        err?.response?.data || err.message
+      );
+    }
+  }
 
   // 5) Call /email/generate to create & schedule the reply (only if we have sender+recipients)
   if (senderEmail && recipientEmails.length > 0) {
@@ -152,16 +187,18 @@ export async function runPostInboundAutomation({
         {
           headers: {
             "Content-Type": "application/json",
-            "Authorization": passthroughAuthToken || "", // forward user's JWT if available
+            Authorization: passthroughAuthToken || "", // forward user's JWT if available
           },
           timeout: 20_000,
         }
       );
 
       console.log("AI /email/generate result:", response.data);
-
     } catch (err) {
-      console.error("AI /email/generate failed", err?.response?.data || err.message);
+      console.error(
+        "AI /email/generate failed",
+        err?.response?.data || err.message
+      );
       // do not throw; we already updated lead status & sentiment
     }
   }

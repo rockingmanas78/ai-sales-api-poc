@@ -13,10 +13,26 @@ import { checkSeatAvailability } from "../middlewares/usage.js"; // 1. Import th
 const userRouter = Router();
 
 // 2. Add middleware to the user creation route
-userRouter.post("/", verifyToken(), authorize("manage_users"), checkSeatAvailability, createUser);
+userRouter.post(
+  "/",
+  verifyToken(),
+  authorize("manage_users"),
+  checkSeatAvailability,
+  createUser
+);
 userRouter.get("/", verifyToken(), authorize("view_users"), getUsers);
 userRouter.get("/:userId", verifyToken(), authorize("view_users"), getUserById);
-userRouter.put("/:userId", verifyToken(), authorize("manage_users"), updateUser);
-userRouter.delete("/:userId", verifyToken(), authorize("manage_users"), deleteUser);
+userRouter.put(
+  "/:userId",
+  verifyToken(),
+  authorize("manage_users"),
+  updateUser
+);
+userRouter.delete(
+  "/:userId",
+  verifyToken(),
+  authorize("manage_users"),
+  deleteUser
+);
 
 export default userRouter;

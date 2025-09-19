@@ -1,5 +1,4 @@
-import prisma from '../utils/prisma.client.js';
-
+import prisma from "../utils/prisma.client.js";
 
 export const getCompanyProfile = async (req, res) => {
   try {
@@ -11,7 +10,7 @@ export const getCompanyProfile = async (req, res) => {
     });
 
     if (!profile) {
-      return res.status(404).json({ message: 'Profile not found' });
+      return res.json(null);
     }
 
     res.json(profile);
@@ -44,7 +43,7 @@ export const upsertCompanyProfile = async (req, res) => {
     const updated = await prisma.companyProfile.upsert({
       where: { id: companyId },
       update: data,
-      create: data
+      create: data,
     });
 
     res.json(updated);
@@ -59,7 +58,7 @@ export const deleteCompanyProfile = async (req, res) => {
     const { companyId } = req.params;
 
     const existing = await prisma.companyProfile.findUnique({
-      where: { id: companyId }
+      where: { id: companyId },
     });
 
     if (!existing) {
@@ -67,7 +66,7 @@ export const deleteCompanyProfile = async (req, res) => {
     }
 
     await prisma.companyProfile.delete({
-      where: { id: companyId }
+      where: { id: companyId },
     });
 
     res.status(200).json({ message: "Company profile deleted successfully" });
@@ -76,5 +75,3 @@ export const deleteCompanyProfile = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
-
-

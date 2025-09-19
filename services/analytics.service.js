@@ -11,14 +11,14 @@ export const getTotalEmailsSent = async (tenantId) => {
 // Total emails OPENED
 export const getTotalEmailsOpened = async (tenantId) => {
   return prisma.emailMessage.count({
-    where: { tenantId, openedAt: { not: null } },
+    where: { tenantId, receivedAt: { not: null } },
   });
 };
 
 // Total emails REPLIED
 export const getTotalEmailsReplied = async (tenantId) => {
   return prisma.emailMessage.count({
-    where: { tenantId, repliedAt: { not: null } },
+    where: { tenantId, receivedAt: { not: null } },
   });
 };
 
@@ -79,10 +79,10 @@ export const getMonthlyEmailPerformance = async (tenantId) => {
         where: { tenantId, sentAt: { gte: monthStart, lte: monthEnd } },
       }),
       prisma.emailMessage.count({
-        where: { tenantId, openedAt: { gte: monthStart, lte: monthEnd } },
+        where: { tenantId, firstOpenedAt: { gte: monthStart, lte: monthEnd } },
       }),
       prisma.emailMessage.count({
-        where: { tenantId, repliedAt: { gte: monthStart, lte: monthEnd } },
+        where: { tenantId, receivedAt: { gte: monthStart, lte: monthEnd } },
       }),
     ]);
 
@@ -124,7 +124,7 @@ export const getCampaignStats = async (tenantId) => {
       status: true,
       EmailMessage: {
         select: {
-          status: true,
+          lastDeliveryStatus: true,
         },
       },
       template: {
