@@ -156,6 +156,7 @@ model User {
   phoneNumber   String?   @db.VarChar(32)
   location      String?   @db.VarChar(120)
   bio           String?
+  avatarUrl     String?
   tenant        Tenant    @relation(fields: [tenantId], references: [id])
 }
 
