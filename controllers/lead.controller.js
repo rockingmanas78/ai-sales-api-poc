@@ -3,6 +3,9 @@ import { PrismaClient } from "@prisma/client";
 import { parseCSVToJson } from "../services/csv.service.js";
 import { bulkUploadLeads } from "../services/leadUpload.service.js";
 
+// Make sure to import the new service function
+import { processBulkLeadCsvWithTransaction } from '../services/bulkLeadService.js';
+
 const prisma = new PrismaClient();
 
 // CREATE Lead
@@ -393,27 +396,35 @@ export const bulkUpdateLeadStatus = async (req, res) => {
   }
 };
 
-export const uploadLeadsFromCSV = async (req, res) => {
-  try {
-    const tenantId = req.user?.tenantId;
+
+
+export const bulkUploadLeadsFromUrl = async (req, res) => {
+    const { fileUrl } = req.body;
+    const { tenantId } = req.user; // Assuming tenantId is attached by verifyToken middleware
+
+    if (!fileUrl) {
+        return res.status(400).json({ error: 'fileUrl is required.' });
+    }
+
     if (!tenantId) {
-      return res.status(400).json({ error: "Missing tenantId in token" });
+        return res.status(400).json({ error: 'Could not identify tenant.' });
     }
 
-    const file = req.file;
-    if (!file) {
-      return res.status(400).json({ error: "No file uploaded" });
+    try {
+        const result = await processBulkLeadCsvWithTransaction(fileUrl, tenantId);
+        res.status(200).json({
+            success: true,
+            message: 'CSV processed successfully.',
+            data: result,
+        });
+    } catch (error) {
+        console.error('Bulk upload transaction failed:', error.message);
+        res.status(500).json({ 
+            success: false,
+            error: 'Bulk upload failed. The entire transaction was rolled back.', 
+            details: error.message 
+        });
     }
-
-    const filePath = file.path;
-
-    const leadsJson = await parseCSVToJson(filePath); // Convert CSV to JSON
-
-    const result = await bulkUploadLeads(leadsJson, tenantId); // Upload JSON to DB
-
-    res.status(200).json({ message: "Leads uploaded successfully", result });
-  } catch (error) {
-    console.error("Error uploading leads:", error);
-    res.status(500).json({ error: "Failed to upload leads from CSV" });
-  }
 };
+
+

@@ -10,87 +10,38 @@ import {
   getDashboardLeads,
   bulkDeleteLeads,
   bulkUpdateLeadStatus,
+  bulkUploadLeadsFromUrl,
 } from "../controllers/lead.controller.js";
 import verifyToken from "../middlewares/verifyToken.js";
 import authorize from "../middlewares/rbac.js";
-import multer from "multer";
-import { uploadLeadsFromCSV } from "../controllers/lead.controller.js";
-
 const leadRouter = Router();
-const upload = multer({ dest: "uploads/" });
+//ROUTE FOR BULK UPLOADING VIA URL
+leadRouter.post(
+  "/bulk-upload", verifyToken(), authorize("manage_leads"), bulkUploadLeadsFromUrl // This controller now expects a JSON body with a 'fileUrl'
+);
 
 // Create a new lead (manual upload)
 leadRouter.post("/", verifyToken(), authorize("manage_leads"), createLead);
 
 // Get all leads by job id
 leadRouter.get(
-  "/by-job/:jobId",
-  verifyToken(),
-  authorize("view_leads"), // Make sure the user has permission
-  getLeadsByJobId
-);
+  "/by-job/:jobId", verifyToken(), authorize("view_leads"), getLeadsByJobId);
 
 // Get all leads
 leadRouter.get(
-  "/tenant/:tenantId",
-  verifyToken(),
-  authorize("view_leads"),
-  getTenantLeads
-);
+  "/tenant/:tenantId", verifyToken(), authorize("view_leads"), getTenantLeads);
 // Get single lead
-leadRouter.get(
-  "/lead/:leadId",
-  verifyToken(),
-  authorize("view_leads"),
-  getLeadById
-);
+leadRouter.get("/lead/:leadId", verifyToken(), authorize("view_leads"), getLeadById);
 // Update lead details
-leadRouter.put(
-  "/:leadId",
-  verifyToken(),
-  authorize("manage_leads"),
-  updateLead
-);
+leadRouter.put("/:leadId", verifyToken(), authorize("manage_leads"), updateLead);
 // Delete lead
-leadRouter.delete(
-  "/:leadId",
-  verifyToken(),
-  authorize("manage_leads"),
-  deleteLead
-);
+leadRouter.delete("/:leadId", verifyToken(), authorize("manage_leads"), deleteLead);
 // Update lead status only
-leadRouter.patch(
-  "/:leadId/status",
-  verifyToken(),
-  authorize("manage_leads"),
-  updateLeadStatus
-);
+leadRouter.patch("/:leadId/status", verifyToken(), authorize("manage_leads"), updateLeadStatus);
 
 //dashboard leads
-leadRouter.get(
-  "/dashboard/leads",
-  verifyToken(),
-  authorize("view_leads"),
-  getDashboardLeads
-);
-leadRouter.post(
-  "/leads/bulk-delete",
-  verifyToken(),
-  authorize("manage_leads"),
-  bulkDeleteLeads
-);
-leadRouter.patch(
-  "/leads/bulk-status",
-  verifyToken(),
-  authorize("manage_leads"),
-  bulkUpdateLeadStatus
-);
-//CSV to Lead Json
-leadRouter.post(
-  "/upload-csv",
-  verifyToken(),
-  upload.single("file"),
-  uploadLeadsFromCSV
-);
+leadRouter.get("/dashboard/leads", verifyToken(), authorize("view_leads"), getDashboardLeads);
+leadRouter.post("/leads/bulk-delete", verifyToken(), authorize("manage_leads"), bulkDeleteLeads);
+leadRouter.patch("/leads/bulk-status", verifyToken(), authorize("manage_leads"), bulkUpdateLeadStatus);
 
 export default leadRouter;
