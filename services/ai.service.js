@@ -133,7 +133,7 @@ export async function runPostInboundAutomation({
         headers: {
           "Content-Type": "application/json",
           // "Authorization": passthroughAuthToken,
-          "X-Request-Id": process.env.WEBHOOK_SECRET,
+          "x-internal-secret": process.env.WEBHOOK_SECRET,
         },
         timeout: 10_000,
       }
@@ -188,7 +188,7 @@ export async function runPostInboundAutomation({
           headers: {
             "Content-Type": "application/json",
             // Authorization: passthroughAuthToken || "", // forward user's JWT if available
-            "X-Request-Id": process.env.WEBHOOK_SECRET,
+            "x-internal-secret": process.env.WEBHOOK_SECRET,
           },
           timeout: 20_000,
         }
