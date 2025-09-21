@@ -189,6 +189,7 @@ export async function runPostInboundAutomation({
             "Content-Type": "application/json",
             // Authorization: passthroughAuthToken || "", // forward user's JWT if available
             "x-internal-secret": process.env.WEBHOOK_SECRET,
+            "tenant-id": tenantId,
           },
           timeout: 20_000,
         }
