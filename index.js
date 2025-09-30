@@ -32,6 +32,9 @@ import tenantOnboardingRoutes from "./routes/tenantOnboarding.routes.js";
 import eventsRouter from "./routes/events.route.js";
 import emailRouter from "./routes/email.route.js";
 import webhookRouter from "./routes/webhooks.route.js";
+import csvRouter from "./routes/csvImport.route.js";
+
+import { startBulkEmailWorker, startCsvJobWorker } from "./jobs/jobWorkers.js";
 
 const app = express();
 
@@ -105,20 +108,17 @@ app.use("/api/tenant", tenantOnboardingRoutes);
 app.use("/api/events", eventsRouter);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/email", emailRouter);
+app.use("/api/csv", csvRouter);
 
 // Global error handler
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: "Internal Server Error" });
 });
-setInterval(async () => {
-  try {
-    await processNextBatch();
-  } catch (err) {
-    console.error("Error in batch processor:", err);
-    // swallow so the loop keeps running
-  }
-}, 60_000);
+
+startBulkEmailWorker();
+startCsvJobWorker();
+
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {

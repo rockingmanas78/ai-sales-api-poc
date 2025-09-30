@@ -64,6 +64,7 @@ model Tenant {
   deletedAt          DateTime?
   bulkEmailJobs      BulkEmailJob[]
   BulkSnippet        BulkSnippet[]
+  CalendarConnection CalendarConnection[]
   CompanyProfile     CompanyProfile?
   Conversation       Conversation[]
   DomainIdentity     DomainIdentity[]
@@ -142,22 +143,23 @@ model CampaignLead {
 }
 
 model User {
-  id            String    @id @default(uuid())
-  tenantId      String
-  email         String    @unique
-  passwordHash  String
-  role          UserRole  @default(MANAGER)
-  verified      Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  deletedAt     DateTime?
-  oauthProvider String?   @db.VarChar(32)
-  oauthId       String?
-  name          String?   @db.VarChar(120)
-  phoneNumber   String?   @db.VarChar(32)
-  location      String?   @db.VarChar(120)
-  bio           String?
-  avatarUrl     String?
-  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  id                 String               @id @default(uuid())
+  tenantId           String
+  email              String               @unique
+  passwordHash       String
+  role               UserRole             @default(MANAGER)
+  verified           Boolean              @default(false)
+  createdAt          DateTime             @default(now())
+  deletedAt          DateTime?
+  oauthProvider      String?              @db.VarChar(32)
+  oauthId            String?
+  name               String?              @db.VarChar(120)
+  phoneNumber        String?              @db.VarChar(32)
+  location           String?              @db.VarChar(120)
+  bio                String?
+  avatarUrl          String?
+  CalendarConnection CalendarConnection[]
+  tenant             Tenant               @relation(fields: [tenantId], references: [id])
 }
 
 model Lead {
@@ -629,6 +631,108 @@ model EmailEvent {
   @@index([tenantId, eventType], map: "idx_emailevent_tenant_eventtype")
 }
 
+model CalendarConnection {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String
+  userId       String
+  provider     CalendarProvider
+  accountEmail String
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?        @db.Timestamptz(6)
+  scope        String?
+  createdAt    DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime         @default(now()) @db.Timestamptz(6)
+  Tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "CalendarConnection_tenant_fkey")
+  User         User             @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "CalendarConnection_user_fkey")
+
+  @@unique([tenantId, userId, provider], map: "CalendarConnection_tenant_user_provider_uq")
+  @@index([tenantId], map: "CalendarConnection_tenant_idx")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model MeetingBooking {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  intentId       String         @db.Uuid
+  finalStart     DateTime       @db.Timestamptz(6)
+  finalEnd       DateTime       @db.Timestamptz(6)
+  calendarSystem CalendarSystem
+  eventId        String?
+  icsUid         String?
+  createdAt      DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime       @default(now()) @db.Timestamptz(6)
+  MeetingIntent  MeetingIntent  @relation(fields: [intentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([intentId], map: "MeetingBooking_intent_idx")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model MeetingIntent {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String
+  conversationId String
+  status         MeetingIntentStatus @default(OFFERED)
+  createdAt      DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime            @default(now()) @db.Timestamptz(6)
+  MeetingBooking MeetingBooking[]
+  MeetingOffer   MeetingOffer[]
+
+  @@index([tenantId, conversationId], map: "MeetingIntent_tenant_conversation_idx")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model MeetingOffer {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  intentId      String        @db.Uuid
+  slotStart     DateTime      @db.Timestamptz(6)
+  slotEnd       DateTime      @db.Timestamptz(6)
+  recipientTz   String        @default("UTC")
+  tokenHash     String?
+  expiresAt     DateTime?     @db.Timestamptz(6)
+  createdAt     DateTime      @default(now()) @db.Timestamptz(6)
+  MeetingIntent MeetingIntent @relation(fields: [intentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([intentId, slotStart, slotEnd], map: "MeetingOffer_unique_slot_per_intent")
+}
+
+model CsvImportJob {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String         @db.Uuid
+  objectKey     String
+  status        String         @default("QUEUED")
+  importMode    ImportMode     @default(UPSERT)
+  dedupePolicy  DedupePolicy   @default(EMAIL)
+  delimiter     String?
+  headerRow     Int?
+  columnMapping Json?
+  totalRows     Int            @default(0)
+  processedRows Int            @default(0)
+  duplicateRows Int            @default(0)
+  failedRows    Int            @default(0)
+  createdAt     DateTime       @default(now()) @db.Timestamptz(6)
+  startedAt     DateTime?      @db.Timestamptz(6)
+  completedAt   DateTime?      @db.Timestamptz(6)
+  CsvImportRow  CsvImportRow[]
+
+  @@index([tenantId, status], map: "idx_CsvImportJob_tenantId_status")
+}
+
+model CsvImportRow {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  jobId         String           @db.Uuid
+  rowNumber     Int
+  rawData       Json
+  status        RowProcessStatus @default(QUEUED)
+  error         String?
+  createdLeadId String?          @db.Uuid
+  processedAt   DateTime?        @db.Timestamptz(6)
+  retryCount    Int              @default(0)
+  CsvImportJob  CsvImportJob     @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_CsvImportRow_jobId")
+
+  @@index([jobId, rowNumber], map: "idx_CsvImportRow_jobId_rowNumber")
+  @@index([jobId, status], map: "idx_CsvImportRow_jobId_status")
+}
+
 enum PlanType {
   FREE
   PRO
@@ -790,4 +894,44 @@ enum SubscriptionStatus {
   CANCELED
   EXPIRED
   PENDING
+}
+
+enum CalendarProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+enum CalendarSystem {
+  GOOGLE
+  MICROSOFT
+  ICS
+}
+
+enum MeetingIntentStatus {
+  OFFERED
+  CONFIRMED
+  RESCHEDULED
+  CANCELLED
+}
+
+enum DedupePolicy {
+  EMAIL
+  LINKEDIN
+  PHONE
+  DOMAIN_PLUS_NAME
+  NONE
+}
+
+enum ImportMode {
+  INSERT_ONLY
+  UPSERT
+  DRY_RUN
+}
+
+enum RowProcessStatus {
+  QUEUED
+  PROCESSED
+  DUPLICATE
+  FAILED
+  SKIPPED
 }

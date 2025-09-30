@@ -144,8 +144,12 @@ export const getCampaigns = async (req, res) => {
         const opened = count("OPENED") + count("CLICKED") + count("REPLIED");
         const replied = count("REPLIED");
 
-        const openRate = emailsSent > 0 ? Number(((opened / emailsSent) * 100).toFixed(2)) : 0;
-        const replyRate = emailsSent > 0 ? Number(((replied / emailsSent) * 100).toFixed(2)) : 0;
+        const openRate =
+          emailsSent > 0 ? Number(((opened / emailsSent) * 100).toFixed(2)) : 0;
+        const replyRate =
+          emailsSent > 0
+            ? Number(((replied / emailsSent) * 100).toFixed(2))
+            : 0;
 
         return {
           ...campaign,
@@ -340,5 +344,64 @@ export const getCampaignDashboard = async (req, res) => {
     return res
       .status(500)
       .json({ error: "Failed to fetch campaign dashboard." });
+  }
+};
+
+/**
+ * Retrieves campaign and lead details based on the provided conversationId.
+ * @param {Request} req - The request object containing conversationId in params.
+ * @param {Response} res - The response object to send the details.
+ */
+export const getDetailsByConversationId = async (req, res) => {
+  const { conversationId } = req.params;
+
+  if (!conversationId) {
+    return res.status(400).json({ error: "conversationId is required" });
+  }
+
+  try {
+    // Step 1: Find the EmailMessage using conversationId
+    const emailMessage = await prisma.emailMessage.findFirst({
+      where: { conversationId },
+      select: {
+        campaignId: true,
+        leadId: true,
+      },
+    });
+
+    if (!emailMessage) {
+      return res
+        .status(404)
+        .json({ error: "No email message found for the given conversationId" });
+    }
+
+    const { campaignId, leadId } = emailMessage;
+
+    // Step 2: Fetch campaign details using campaignId
+    const campaignDetails = campaignId
+      ? await prisma.emailCampaign.findFirst({
+          where: { id: campaignId },
+          include: {
+            template: true,
+            campaignLeads: true,
+          },
+        })
+      : null;
+
+    // Step 3: Fetch lead details using leadId
+    const leadDetails = leadId
+      ? await prisma.lead.findFirst({
+          where: { id: leadId },
+        })
+      : null;
+
+    // Step 4: Return combined details
+    return res.status(200).json({
+      campaign: campaignDetails,
+      lead: leadDetails,
+    });
+  } catch (error) {
+    console.error("Error retrieving details by conversationId:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
