@@ -3,6 +3,7 @@ import { Router } from "express";
 import ingestSingleEvent from "../controllers/ingestSingle.controller.js";
 import ingestBatchEvents from "../controllers/ingestBatch.controller.js";
 import {
+  getSessionsByUserId,
   listEvents,
   tenantEventList,
 } from "../controllers/listEvents.controller.js";
@@ -17,6 +18,8 @@ router.post("/batch", ingestBatchEvents);
 
 //to check the list of the events happening
 router.get("/all", listEvents);
+
+router.get("/getSession/:userId" , getSessionsByUserId );
 
 router.get("/events-list", tenantEventList);
 
