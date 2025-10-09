@@ -72,6 +72,8 @@ app.use(
       "Cache-Control",
       "Pragma",
       "Expires",
+      "idempotency-key",
+      "x-ingest-key"
     ],
     credentials: true,
   })

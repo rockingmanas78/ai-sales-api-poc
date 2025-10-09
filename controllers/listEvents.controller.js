@@ -79,7 +79,7 @@ export async function listEvents(req, res) {
       queryOptions.skip = 1;
     }
 
-    const rows = await prisma.app_event.findMany(queryOptions);
+    const rows = await prisma.appEvent.findMany(queryOptions);
 
     let next_cursor = null;
     if (rows.length === take) {
