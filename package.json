@@ -17,10 +17,11 @@
     "@aws-sdk/lib-dynamodb": "^3.828.0",
     "@prisma/client": "^6.8.2",
     "aws-sdk": "^2.1692.0",
-    "axios": "^1.9.0",
+    "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
+    "csv-parse": "^6.1.0",
     "csv-parser": "^3.2.0",
     "csvtojson": "^2.0.10",
     "date-fns": "^4.1.0",
@@ -38,7 +39,9 @@
     "openid-client": "^6.8.0",
     "pg-sdk-node": "^2.0.2",
     "razorpay": "^2.9.6",
-    "sns-validator": "^0.3.5"
+    "sns-validator": "^0.3.5",
+    "uuid": "^13.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.0.3",

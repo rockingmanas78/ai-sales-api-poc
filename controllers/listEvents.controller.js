@@ -127,3 +127,27 @@ export async function tenantEventList(req, res) {
     res.status(500).json({ error: "Internal server error" });
   }
 }
+
+export async function getSessionsByUserId(req, res) {
+  try {
+    const { userId } = req.params;
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required in params" });
+    }
+
+    const sessions = await prisma.appEvent.findMany({
+      where: { user_id: userId },
+      orderBy: { occurred_at: 'desc' }, // sort latest to oldest
+      select: {
+        occurred_at: true,
+        session_id: true,
+        tenant_id: true,
+      },
+    });
+
+    res.status(200).json({ sessions });
+  } catch (error) {
+    console.error("Error fetching sessions:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}

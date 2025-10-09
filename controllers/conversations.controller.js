@@ -37,11 +37,11 @@ export async function listConversations(req, res, next) {
       tenantId,
       ...(query
         ? {
-            OR: [
-              { subject: { contains: query, mode: "insensitive" } },
-              { participants: { has: query } }, // exact email match in array
-            ],
-          }
+          OR: [
+            { subject: { contains: query, mode: "insensitive" } },
+            { participants: { has: query } }, // exact email match in array
+          ],
+        }
         : {}),
     };
 
@@ -172,3 +172,82 @@ export async function getConversationMessages(req, res, next) {
     next(err);
   }
 }
+
+
+export async function getUniqueConversationsByCampaignID(req, res, next) {
+  try {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Unauthorized: missing tenantId" });
+
+    const { campaignId } = req.params;
+    if (!campaignId || typeof campaignId !== "string") {
+      return res.status(400).json({ error: "Invalid or missing campaignId" });
+    }
+
+    const sort = (req.query.sort || "asc").toLowerCase();
+    if (!["asc", "desc"].includes(sort)) {
+      return res.status(400).json({ error: "Invalid sort parameter, expected 'asc' or 'desc'" });
+    }
+    const page = Number(req.query.page) || 1;
+    const pageSize = Math.min(Number(req.query.pageSize) || 50, 200);
+
+    if (page < 1 || pageSize < 1) {
+      return res.status(400).json({ error: "Invalid page or pageSize, must be >= 1" });
+    }
+    const skip = (page - 1) * pageSize;
+
+    // Step 1: Find unique conversation IDs for the campaign/tenant
+    const uniqueConversations = await prisma.emailMessage.findMany({
+      where: { tenantId, campaignId },
+      distinct: ['conversationId'],
+      select: { conversationId: true },
+      orderBy: { createdAt: sort }
+    });
+
+    const total = uniqueConversations.length;
+    const totalPages = Math.ceil(total / pageSize);
+    const paginatedConversationIds = uniqueConversations
+      .slice(skip, skip + pageSize)
+      .map(convo => convo.conversationId);
+
+    if (!paginatedConversationIds.length) {
+      return res.json({ campaignId, conversations: [], total, totalPages, page, pageSize });
+    }
+
+    console.log(paginatedConversationIds)
+
+    // Step 2: Get full Conversation objects for these IDs
+    const conversations = await prisma.conversation.findMany({
+      where: {
+        id: { in: paginatedConversationIds },
+        tenantId: tenantId
+      },
+      include: {
+        EmailMessage: {
+          where: { campaignId },
+          select: {
+            id: true,
+            subject: true,
+            createdAt: true,
+            direction: true
+          }
+        }
+      }
+    });
+
+
+    return res.json({
+      campaignId,
+      conversations,
+      total,
+      totalPages,
+      page,
+      pageSize
+    });
+
+  } catch (err) {
+    return res.status(500).json({ error: "Internal server error", details: err.message });
+  }
+}
+
+
