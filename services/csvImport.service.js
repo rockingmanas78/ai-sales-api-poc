@@ -1,6 +1,5 @@
 import prisma from "../utils/prisma.client.js";
 import { parse } from "csv-parse";
-import { getObjectStream } from "../controllers/knowledgeDocument.controller.js";
 import {
   normalizeEmail,
   normalizePhone,
@@ -11,7 +10,17 @@ import xlsx from "xlsx";
 import { Readable } from "stream";
 import { lead_source } from "@prisma/client";
 import dotenv from "dotenv";
+import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 dotenv.config();
+
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_PROD_ACCESS_KEY,
+    secretAccessKey: process.env.AWS_PROD_SECRET_KEY,
+  },
+});
+
 
 /**
  * Service to parse a CSV file and seed rows into the database.
@@ -45,7 +54,7 @@ export const parseAndSeedCsvService = async ({
     }
 
     // Fetch the CSV file stream from S3
-    const stream = await getObjectStream(objectKey);
+    const stream = await getObjectStreamCSV(objectKey);
 
     // Validate the file content
     const chunks = [];
@@ -431,7 +440,7 @@ const validateRowData = (row, rawData) => {
  */
 export const processCsvImportJob = async (jobId) => {
   try {
-    const batchSize = 200;
+    const batchSize = 5;
 
     // Fetch job details
     const job = await fetchJobDetails(jobId);
@@ -506,7 +515,7 @@ const fetchJobDetails = async (jobId) => {
 
   if (job.status !== "PROCESSING") {
     if (job.status === "QUEUED") {
-      if (job.retryCount >= parseInt(process.env.RETRY_COUNT_MAX_LIMIT, 10)) {
+      if (job.retryCount >= parseInt(process.env.RETRY_COUNT_MAX_LIMIT, 5)) {
         await prisma.csvImportJob.update({
           where: { id: jobId },
           data: { status: "FAILED", completedAt: new Date() },
@@ -768,7 +777,7 @@ export const processCsvJobs = async () => {
     const jobs = await prisma.csvImportJob.findMany({
       where: { status: "QUEUED" },
       orderBy: { createdAt: "asc" },
-      take: 200, // Limit the total number of rows to process
+      take: 5, // Limit the total number of rows to process
     });
 
     for (const job of jobs) {
@@ -785,6 +794,23 @@ export const processCsvJobs = async () => {
     }
   } catch (error) {
     console.error("Worker: Error processing jobs:", error);
+    throw error;
+  }
+};
+
+
+
+export const getObjectStreamCSV = async (objectKey) => {
+  try {
+    const params = {
+      Bucket: process.env.S3_BUCKET_CSV, // Ensure this environment variable is set
+      Key: objectKey,
+    };
+    console.log(params);
+    const response = await s3.send(new GetObjectCommand(params));
+    return response.Body; // This is a Readable stream
+  } catch (error) {
+    console.error("Error retrieving object stream:", error);
     throw error;
   }
 };

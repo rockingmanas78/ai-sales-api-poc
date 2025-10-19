@@ -6,9 +6,15 @@ import {
   createCsvImportJob,
   getCsvImportJobStatus,
   listCsvImportJobs,
+  uploadCSVDocument
 } from "../controllers/csvImport.controller.js";
+import multer from "multer";
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
+
+router.post("/upload" ,upload.single("file"), uploadCSVDocument )
 
 // Configure CSV Import Job
 router.post("/configure", configureCsvImport);
