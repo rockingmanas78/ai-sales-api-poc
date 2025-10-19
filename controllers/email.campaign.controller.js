@@ -66,6 +66,7 @@ export const createCampaign = async (req, res) => {
     }
 
     // 7) Prevent duplicates
+    // CHECK THIS
     const existingCampaign = await prisma.emailCampaign.findFirst({
       where: { tenantId, templateId, scheduledAt },
     });
@@ -87,6 +88,8 @@ export const createCampaign = async (req, res) => {
         campaign_type: campaignTypeValue,
       },
     });
+
+    // console.log(campaign)
 
     return res.status(201).json(campaign);
   } catch (error) {

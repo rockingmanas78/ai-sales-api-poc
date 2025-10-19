@@ -6,28 +6,40 @@ import {
   getDocumentById,
   updateDocument,
   softDeleteDocument,
+  uploadDocument,
 } from "../controllers/knowledgeDocument.controller.js";
 
 import { verifyToken } from "../middlewares/verifyToken.js";
 import authorize from "../middlewares/rbac.js";
+import multer from "multer";
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 
 //Generate presigned S3 URL
+// router.post(
+//   "/presign",
+//   verifyToken(),
+//   authorize("manage_documents"),
+//   generatePresignedUrl
+// );
+
 router.post(
-  "/presign",
+  "/upload",
   verifyToken(),
   authorize("manage_documents"),
-  generatePresignedUrl
-);
+  upload.single("file"),
+  uploadDocument
+)
 
 //Record uploaded document metadata
-router.post(
-  "/",
-  verifyToken(),
-  authorize("manage_documents"),
-  recordUploadedDocument
-);
+// router.post(
+//   "/",
+//   verifyToken(),
+//   authorize("manage_documents"),
+//   recordUploadedDocument
+// );
 
 //List documents (with optional ?status= filter)
 router.get("/", verifyToken(), authorize("view_documents"), listDocuments);
