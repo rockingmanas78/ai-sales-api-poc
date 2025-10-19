@@ -3,8 +3,138 @@ import axios from "axios";
 import { Readable } from "stream";
 import { v4 as uuidv4 } from "uuid";
 import AWS from "aws-sdk";
+import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import path from "path";
 
-const s3 = new AWS.S3();
+const ALLOWED_MIME_TYPES = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // docx
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // xlsx
+  "text/plain",
+  "text/csv",
+  "image/jpeg",
+  "image/png",
+  // add more allowed mimetypes if needed
+];
+
+
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_PROD_ACCESS_KEY,
+    secretAccessKey: process.env.AWS_PROD_SECRET_KEY,
+  },
+});
+
+// export const uploadDocument = async (req, res) => {
+//   try {
+//     // 1️⃣ Validate file
+//     if (!req.file) {
+//       return res.status(400).json({ error: "No file uploaded" });
+//     }
+//     // if (req.file.mimetype !== "text/csv") {
+//     //   return res.status(400).json({ error: "Only CSV files are allowed" });
+//     // }
+
+//     const mimetype = req.file.mimetype;
+
+//     console.log("started")
+
+//     // 2️⃣ Upload to S3
+//     const file = req.file;
+//     const ext = path.extname(file.originalname);
+//     const fileKey = `documents/${uuidv4()}${ext}`;
+
+//     const uploadParams = {
+//       Bucket: BUCKET,
+//       Key: fileKey,
+//       Body: file.buffer,
+//       ContentType: file.mimetype,
+//     };
+
+//     console.log("Uploading to S3:", uploadParams);
+
+//     await s3.send(new PutObjectCommand(uploadParams));
+//     console.log("Uploaded to S3:", uploadParams);
+
+//     // 3️⃣ (Optional) Parse CSV for validation or preview
+//     // const parsedData = await parseCSV(file.buffer);
+
+//     // 4️⃣ Respond with metadata
+//     return res.status(200).json({
+//       message: "CSV uploaded successfully",
+//       fileKey,
+//       s3Url: `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`,
+//       // parsedData, // include this if you want parsed content
+//     });
+//   } catch (error) {
+//     console.error("Error uploading CSV document:", error);
+//     return res.status(500).json({ error: "Internal server error" });
+//   }
+// }
+
+export const uploadDocument = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const mimetype = req.file.mimetype;
+    if (!ALLOWED_MIME_TYPES.includes(mimetype)) {
+      return res.status(400).json({
+        error: `Unsupported file type. Allowed types: ${ALLOWED_MIME_TYPES.join(", ")}`,
+      });
+    }
+
+    const file = req.file;
+    console.log(file);
+    const ext = path.extname(file.originalname);
+    console.log(ext);
+    const fileKey = `documents/${uuidv4()}${ext}`;
+    console.log(fileKey );
+
+    const BUCKET = process.env.S3_BUCKET_DOCS || "sale-funnel-knowledge-documents";
+
+    const uploadParams = {
+      Bucket: BUCKET,
+      Key: fileKey,
+      Body: file.buffer,
+      ContentType: mimetype,
+    };
+
+    await s3.send(new PutObjectCommand(uploadParams));
+
+    console.log("Uploaded")
+
+    // After upload, record document metadata in database
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: "Missing tenant ID in user context" });
+    }
+
+    const doc = await prisma.knowledgeDocument.create({
+      data: {
+        tenant_id: tenantId,
+        file_key: fileKey,
+        filename: file.originalname,
+        mime_type: mimetype,
+        size_bytes: file.size,
+      },
+    });
+
+    return res.status(200).json({
+      message: "Document uploaded and recorded successfully",
+      fileKey,
+      s3Url: `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`,
+      documentRecord: doc,
+    });
+  } catch (error) {
+    console.error("Error uploading or recording document:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
 
 export const generatePresignedUrl = async (req, res) => {
   const { filename, mimeType } = req.body;
@@ -134,29 +264,47 @@ export const softDeleteDocument = async (req, res) => {
  * @param {string} objectKey - The URL or S3 object key of the file.
  * @returns {ReadableStream} - The file stream.
  */
+// export const getObjectStream = async (objectKey) => {
+//   try {
+//     if (objectKey.startsWith("http://") || objectKey.startsWith("https://")) {
+//       // Fetch the file from a URL (e.g., Cloudinary)
+//       const response = await axios.get(objectKey, {
+//         responseType: "arraybuffer", // Ensure we get raw binary
+//       });
+
+//       console.log(response);
+
+//       const buffer = Buffer.from(response.data); // Convert to Node buffer
+//       console.log(buffer);
+//       return Readable.from(buffer); // Turn buffer into a readable stream
+//     } else {
+//       // Fetch the file from S3
+//       const params = {
+//         Bucket: process.env.S3_BUCKET_CSV, // Ensure this environment variable is set
+//         Key: objectKey,
+//       };
+
+//       return s3.getObject(params).createReadStream(); // Return S3 object as a readable stream
+//     }
+//   } catch (error) {
+//     console.error("Error retrieving object stream:", error.message);
+//     throw new Error(
+//       "Failed to retrieve object stream. Please check the file format and try again."
+//     );
+//   }
+// };
+
 export const getObjectStream = async (objectKey) => {
   try {
-    if (objectKey.startsWith("http://") || objectKey.startsWith("https://")) {
-      // Fetch the file from a URL (e.g., Cloudinary)
-      const response = await axios.get(objectKey, {
-        responseType: "arraybuffer", // Ensure we get raw binary
-      });
-
-      const buffer = Buffer.from(response.data); // Convert to Node buffer
-      return Readable.from(buffer); // Turn buffer into a readable stream
-    } else {
-      // Fetch the file from S3
-      const params = {
-        Bucket: process.env.AWS_S3_BUCKET_NAME, // Ensure this environment variable is set
-        Key: objectKey,
-      };
-
-      return s3.getObject(params).createReadStream(); // Return S3 object as a readable stream
-    }
+    const params = {
+      Bucket: process.env.S3_BUCKET_CSV, // Ensure this environment variable is set
+      Key: objectKey,
+    };
+    console.log(params);
+    const response = await s3.send(new GetObjectCommand(params));
+    return response.Body; // This is a Readable stream
   } catch (error) {
-    console.error("Error retrieving object stream:", error.message);
-    throw new Error(
-      "Failed to retrieve object stream. Please check the file format and try again."
-    );
+    console.error("Error retrieving object stream:", error);
+    throw error;
   }
 };
