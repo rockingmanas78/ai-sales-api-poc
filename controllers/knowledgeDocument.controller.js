@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import AWS from "aws-sdk";
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import path from "path";
+import { ingestKnowledgeDocument } from "../services/ai.service.js";
 
 const ALLOWED_MIME_TYPES = [
   "application/pdf",
@@ -28,52 +29,6 @@ const s3 = new S3Client({
   },
 });
 
-// export const uploadDocument = async (req, res) => {
-//   try {
-//     // 1️⃣ Validate file
-//     if (!req.file) {
-//       return res.status(400).json({ error: "No file uploaded" });
-//     }
-//     // if (req.file.mimetype !== "text/csv") {
-//     //   return res.status(400).json({ error: "Only CSV files are allowed" });
-//     // }
-
-//     const mimetype = req.file.mimetype;
-
-//     console.log("started")
-
-//     // 2️⃣ Upload to S3
-//     const file = req.file;
-//     const ext = path.extname(file.originalname);
-//     const fileKey = `documents/${uuidv4()}${ext}`;
-
-//     const uploadParams = {
-//       Bucket: BUCKET,
-//       Key: fileKey,
-//       Body: file.buffer,
-//       ContentType: file.mimetype,
-//     };
-
-//     console.log("Uploading to S3:", uploadParams);
-
-//     await s3.send(new PutObjectCommand(uploadParams));
-//     console.log("Uploaded to S3:", uploadParams);
-
-//     // 3️⃣ (Optional) Parse CSV for validation or preview
-//     // const parsedData = await parseCSV(file.buffer);
-
-//     // 4️⃣ Respond with metadata
-//     return res.status(200).json({
-//       message: "CSV uploaded successfully",
-//       fileKey,
-//       s3Url: `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`,
-//       // parsedData, // include this if you want parsed content
-//     });
-//   } catch (error) {
-//     console.error("Error uploading CSV document:", error);
-//     return res.status(500).json({ error: "Internal server error" });
-//   }
-// }
 
 export const uploadDocument = async (req, res) => {
   try {
@@ -89,13 +44,11 @@ export const uploadDocument = async (req, res) => {
     }
 
     const file = req.file;
-    console.log(file);
     const ext = path.extname(file.originalname);
-    console.log(ext);
     const fileKey = `documents/${uuidv4()}${ext}`;
-    console.log(fileKey );
 
     const BUCKET = process.env.S3_BUCKET_DOCS || "sale-funnel-knowledge-documents";
+    const REGION = process.env.AWS_REGION || "us-east-1";
 
     const uploadParams = {
       Bucket: BUCKET,
@@ -104,37 +57,60 @@ export const uploadDocument = async (req, res) => {
       ContentType: mimetype,
     };
 
-    await s3.send(new PutObjectCommand(uploadParams));
+    // S3 Upload error handling
+    try {
+      await s3.send(new PutObjectCommand(uploadParams));
+    } catch (s3Error) {
+      console.error("S3 upload error:", s3Error);
+      return res.status(502).json({ error: "Error uploading document to S3", details: s3Error.message });
+    }
 
-    console.log("Uploaded")
-
-    // After upload, record document metadata in database
     const tenantId = req.user?.tenantId;
     if (!tenantId) {
       return res.status(400).json({ error: "Missing tenant ID in user context" });
     }
 
-    const doc = await prisma.knowledgeDocument.create({
-      data: {
-        tenant_id: tenantId,
-        file_key: fileKey,
-        filename: file.originalname,
-        mime_type: mimetype,
-        size_bytes: file.size,
-      },
-    });
+    // Prisma DB error handling
+    let doc;
+    try {
+      doc = await prisma.knowledgeDocument.create({
+        data: {
+          tenant_id: tenantId,
+          file_key: fileKey,
+          filename: file.originalname,
+          mime_type: mimetype,
+          size_bytes: file.size,
+        },
+      });
+    } catch (dbError) {
+      console.error("Prisma DB error:", dbError);
+      return res.status(500).json({ error: "Error recording document metadata", details: dbError.message });
+    }
+
+    // AI ingest error handling
+    let resp;
+    try {
+      resp = await ingestKnowledgeDocument(doc.id, req.headers);
+      console.log(resp);
+    } catch (aiError) {
+      console.error("AI Service error:", aiError);
+      // Optionally update doc status in DB to "ingest" failed here
+      return res.status(500).json({ error: "Error ingesting document with AI", details: aiError.message });
+    }
 
     return res.status(200).json({
       message: "Document uploaded and recorded successfully",
       fileKey,
-      s3Url: `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`,
+      s3Url: `https://${BUCKET}.s3.${REGION}.amazonaws.com/${fileKey}`,
       documentRecord: doc,
+      aiIngest: resp,
     });
   } catch (error) {
     console.error("Error uploading or recording document:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: "Internal server error", details: error.message });
   }
 };
+
 
 export const generatePresignedUrl = async (req, res) => {
   const { filename, mimeType } = req.body;

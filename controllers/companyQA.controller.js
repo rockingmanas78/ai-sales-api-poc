@@ -1,3 +1,4 @@
+import { ingestCompanyQa } from "../services/ai.service.js";
 import prisma from "../utils/prisma.client.js";
 
 // GET /api/company/qa
@@ -107,6 +108,38 @@ export const createCompanyQABulk = async (req, res) => {
         )
       );
     }
+
+    // --- NEW: Trigger ingestion for all newly created items ---
+    if (created.length > 0) {
+      const authHeader = req.headers.authorization; // Get the auth header from the request
+
+      if (!authHeader) {
+        console.warn(
+          "No auth header found; skipping ingestion for new Company QAs."
+        );
+      } else {
+        console.log(`Triggering ingestion for ${created.length} new Company QAs...`);
+        
+        // Use Promise.allSettled to try all ingestions even if some fail
+        const ingestPromises = created.map((qa) =>
+          ingestCompanyQa(qa.id, authHeader)
+        );
+
+        const results = await Promise.allSettled(ingestPromises);
+
+        results.forEach((result, index) => {
+          if (result.status === "rejected") {
+            console.error(
+              `Failed to ingest CompanyQA ID ${created[index].id}:`,
+              result.reason
+            );
+          }
+        });
+        
+        console.log("Company QA ingestion triggers completed.");
+      }
+    }
+    // --- End of new block ---
 
     res.status(201).json({ message: "QAs created", created });
   } catch (err) {

@@ -1,3 +1,4 @@
+import { ingestCompanyProfile } from "../services/ai.service.js";
 import prisma from "../utils/prisma.client.js";
 
 export const getCompanyProfile = async (req, res) => {
@@ -21,17 +22,35 @@ export const getCompanyProfile = async (req, res) => {
 };
 
 export const createCompanyProfile = async (req, res) => {
-  try {
-    const tenantId = req.user.tenantId;
-    const data = { ...req.body, tenant_id: tenantId };
+  const tenantId = req.user?.tenantId;
 
-    const created = await prisma.companyProfile.create({ data });
-    res.status(201).json(created);
-  } catch (error) {
-    console.error("Error creating company profile:", error);
-    res.status(500).json({ message: "Internal server error" });
+  if (!tenantId) {
+    return res.status(400).json({ message: "Missing tenant ID in user context" });
   }
+
+  const data = { ...req.body, tenant_id: tenantId };
+  let created;
+
+  try {
+    created = await prisma.companyProfile.create({ data });
+  } catch (dbError) {
+    // Optionally use instanceof Prisma.PrismaClientKnownRequestError and dbError.code for finer control
+    console.error("Prisma error creating company profile:", dbError);
+    return res.status(500).json({ message: "Failed to create company profile", error: dbError.message });
+  }
+
+  try {
+    const resp = await ingestCompanyProfile(created.id, req.headers);
+    console.log(resp)
+  } catch (aiError) {
+    console.error("AI ingestion error:", aiError);
+    // Optionally update DB or send a notification about the ingestion failure
+    return res.status(502).json({ message: "Company created but ingestion failed", error: aiError.message, record: created });
+  }
+
+  return res.status(201).json(created);
 };
+
 
 export const upsertCompanyProfile = async (req, res) => {
   try {

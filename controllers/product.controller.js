@@ -1,3 +1,4 @@
+import { ingestProduct } from "../services/ai.service.js";
 import prisma from "../utils/prisma.client.js";
 
 export const getAllProducts = async (req, res) => {
@@ -51,38 +52,67 @@ export const getProductById = async (req, res) => {
 };
 
 export const createProduct = async (req, res) => {
+  const tenantId = req.user?.tenantId;
+  const { name, ...rest } = req.body;
+
+  if (!tenantId) {
+    return res.status(400).json({ message: "Missing tenant ID in user context" });
+  }
+  if (!name) {
+    return res.status(400).json({ message: "Name is required" });
+  }
+
+  let company;
   try {
-    const tenantId = req.user.tenantId;
-    const { name, ...rest } = req.body;
-
-    if (!name) return res.status(400).json({ message: "Name is required" });
-
-    const company = await prisma.companyProfile.findUnique({
+    company = await prisma.companyProfile.findUnique({
       where: { tenant_id: tenantId },
     });
-
-    if (!company) return res.status(404).json({ message: "Company not found" });
-
-    let data = {
-      company_id: company.id,
-      name,
-      ...rest,
-    };
-    if (rest.ProductQA) {
-      // Remove product_id from each QA object
-      const cleanQAs = rest.ProductQA.map(({ product_id, ...qa }) => qa);
-      data.ProductQA = { create: cleanQAs };
-    }
-    const newProduct = await prisma.product.create({
-      data,
-    });
-
-    res.status(201).json(newProduct);
-  } catch (err) {
-    console.error("Error creating product:", err);
-    res.status(500).json({ message: "Internal server error" });
+  } catch (dbErr) {
+    console.error("Prisma error finding company:", dbErr);
+    return res.status(500).json({ message: "Error searching for company profile", error: dbErr.message });
   }
+
+  if (!company) {
+    return res.status(404).json({ message: "Company not found" });
+  }
+
+  let data = {
+    company_id: company.id,
+    name,
+    ...rest,
+  };
+  if (rest.ProductQA) {
+    // Remove product_id from each QA object
+    const cleanQAs = rest.ProductQA.map(({ product_id, ...qa }) => qa);
+    data.ProductQA = { create: cleanQAs };
+  }
+
+  let newProduct;
+  try {
+    newProduct = await prisma.product.create({ data });
+  } catch (dbErr) {
+    // Handle Prisma error codes, e.g. unique constraint violation
+    if (dbErr.code === "P2002") {
+      return res.status(409).json({ message: "Product with this name already exists", error: dbErr.meta });
+    }
+    console.error("Prisma error creating product:", dbErr);
+    return res.status(500).json({ message: "Error creating product", error: dbErr.message });
+  }
+
+  try {
+    await ingestProduct(newProduct.id, req.headers);
+  } catch (aiErr) {
+    console.error("AI ingestion error:", aiErr);
+    return res.status(502).json({
+      message: "Product created but ingestion failed",
+      error: aiErr.message,
+      record: newProduct,
+    });
+  }
+
+  return res.status(201).json(newProduct);
 };
+
 
 export const updateProduct = async (req, res) => {
   try {

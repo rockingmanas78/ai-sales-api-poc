@@ -1,3 +1,4 @@
+import { ingestWebsiteContent } from '../services/ai.service.js';
 import prisma from '../utils/prisma.client.js';
 
 // POST /api/websites - Add a new website for crawling
@@ -6,23 +7,36 @@ export const createWebsite = async (req, res) => {
   const tenantId = req.user?.tenantId;
 
   if (!tenantId || !url) {
-    return res.status(400).json({ message: 'Missing tenant ID or URL' });
+    return res.status(400).json({ message: "Missing tenant ID or URL" });
   }
 
+  let newSite;
   try {
-    const newSite = await prisma.websiteContent.create({
+    newSite = await prisma.websiteContent.create({
       data: {
         tenant_id: tenantId,
         url,
-        status: 'PENDING',
+        status: "PENDING",
       },
     });
-
-    res.status(201).json(newSite);
-  } catch (err) {
-    res.status(500).json({ message: 'Failed to create website record', error: err.message });
+  } catch (dbErr) {
+    console.error("Prisma error creating website:", dbErr);
+    // Optionally parse and customize Prisma error response
+    return res.status(500).json({ message: "Failed to create website record", error: dbErr.message });
   }
+
+  try {
+    const resp = await ingestWebsiteContent(newSite.id, req.headers);
+    console.log(resp);
+  } catch (aiErr) {
+    console.error("AI ingestion error:", aiErr);
+    // Optionally record status update for failed ingest, or notify user
+    return res.status(502).json({ message: "Failed to ingest website content", error: aiErr.message, record: newSite });
+  }
+
+  return res.status(201).json(newSite);
 };
+
 
 // GET /api/websites - List websites by tenant
 export const listWebsites = async (req, res) => {

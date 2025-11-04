@@ -1,6 +1,7 @@
 import axios from "axios";
 import { AI_SERVICE_ENDPOINT } from "../constants/endpoints.constants.js";
 import prisma from "../utils/prisma.client.js";
+import https from "https";
 import { generateAuthToken } from "../utils/generateTokens.js";
 
 /**
@@ -27,6 +28,111 @@ export async function getSpamScore(emailBody, incomingAuth) {
   // adapt this to resp.data if the shape differs
   return typeof resp.data === "number" ? resp.data : resp.data.score;
 }
+
+// --- New Ingestion Functions ---
+
+/**
+ * Helper for handling ingest API calls
+ * @param {string} url
+ * @param {string} authHeader
+ * @param {string} logContext (e.g., "company profile")
+ * @param {string} id
+ */
+async function triggerIngest(url, authHeader, logContext, id) {
+  console.log(`Triggering ingestion for ${logContext}: ${id}`);
+  try {
+    // The curl command has no data body, so we pass `null` for the body.
+    const resp = await axios.post(url, null, {
+      // httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+      headers: authHeader,
+      // Ingestion might take longer than a simple spam check
+      // timeout: 30_000, 
+    });
+
+    if (resp.status !== 200) {
+      // Use 202 if your API returns "Accepted"
+      throw new Error(`Ingest API responded ${resp.status}`);
+    }
+    
+    console.log(`Ingestion successful for ${logContext} ${id}:`, resp);
+    return resp;
+  } catch (err) {
+    console.error(
+      `Failed to ingest ${logContext} ${id}:`,
+      err?.response?.data || err.message
+    );
+    // Re-throw so the calling service knows it failed
+    throw err; 
+  }
+}
+
+/**
+ * Triggers ingestion for a Company Profile.
+ * @param {string} id - The ID of the company profile to ingest.
+ * @param {string} authHeader - The full Authorization header (e.g., "Bearer ...").
+ * @returns {Promise<any>}
+ */
+export async function ingestCompanyProfile(id, authHeader) {
+  const url = `${AI_SERVICE_ENDPOINT}/api/ingest/company-profile/${id}`;
+  return triggerIngest(url, authHeader, "company profile", id);
+}
+
+/**
+ * Triggers ingestion for Company Q&A.
+ * @param {string} id - The ID of the company Q&A set.
+ * @param {string} authHeader - The full Authorization header.
+ * @returns {Promise<any>}
+ */
+export async function ingestCompanyQa(id, authHeader) {
+  const url = `${AI_SERVICE_ENDPOINT}/api/ingest/company-qa/${id}`;
+  return triggerIngest(url, authHeader, "company Q&A", id);
+}
+
+/**
+ * Triggers ingestion for a Product.
+ * @param {string} id - The ID of the product.
+ * @param {string} authHeader - The full Authorization header.
+ * @returns {Promise<any>}
+ */
+export async function ingestProduct(id, authHeader) {
+  const url = `${AI_SERVICE_ENDPOINT}/api/ingest/product/${id}`;
+  return triggerIngest(url, authHeader, "product", id);
+}
+
+/**
+ * Triggers ingestion for Product Q&A.
+ * @param {string} id - The ID of the product Q&A set.
+ * @param {string} authHeader - The full Authorization header.
+ * @returns {Promise<any>}
+ */
+export async function ingestProductQa(id, authHeader) {
+  const url = `${AI_SERVICE_ENDPOINT}/api/ingest/product-qa/${id}`;
+  return triggerIngest(url, authHeader, "product Q&A", id);
+}
+
+/**
+ * Triggers ingestion for a Knowledge Document.
+ * @param {string} id - The ID of the knowledge document.
+ * @param {string} authHeader - The full Authorization header.
+ * @returns {Promise<any>}
+ */
+export async function ingestKnowledgeDocument(id, authHeader) {
+  const url = `${AI_SERVICE_ENDPOINT}/api/ingest/knowledge-document/${id}`;
+  return triggerIngest(url, authHeader, "knowledge document", id);
+}
+
+/**
+ * Triggers ingestion for Website Content.
+ * @param {string} id - The ID of the website content.
+ * @param {string} authHeader - The full Authorization header.
+ * @returns {Promise<any>}
+ */
+export async function ingestWebsiteContent(id, authHeader) {
+  const url = `${AI_SERVICE_ENDPOINT}/api/ingest/website-content/${id}`;
+  return triggerIngest(url, authHeader, "website content", id);
+}
+
+// --- End of New Ingestion Functions ---
 
 /**
  * Map AI sentiment (free text) to your LeadStatus enum.
@@ -205,3 +311,5 @@ export async function runPostInboundAutomation({
     }
   }
 }
+
+
