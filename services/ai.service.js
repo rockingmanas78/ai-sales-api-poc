@@ -46,7 +46,7 @@ async function triggerIngest(url, authHeader, logContext, id) {
       // httpsAgent: new https.Agent({ rejectUnauthorized: false }),
       headers: authHeader,
       // Ingestion might take longer than a simple spam check
-      // timeout: 30_000, 
+      timeout: 0, 
     });
 
     if (resp.status !== 200) {
