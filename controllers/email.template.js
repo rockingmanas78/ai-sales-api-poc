@@ -115,11 +115,11 @@ export const createTemplate = async (req, res) => {
 
 export const createAiTemplate = async (req, res) => {
   try {
-    const { user_prompt } = req.body;
+    const { payload } = req.body;
     const tenantId = req.user.tenantId;
 
     // 1️⃣ Required‐fields check
-    if (!user_prompt) {
+    if (!payload) {
       return res.status(400).json({ message: "Required fields missing" });
     }
 
@@ -140,7 +140,7 @@ export const createAiTemplate = async (req, res) => {
 
     const { data } = await axios.post(
       `${AI_SERVICE_ENDPOINT}/api/email/template`,
-      { user_prompt },
+      payload ,
       {
         headers: {
           Authorization: incomingAuth,

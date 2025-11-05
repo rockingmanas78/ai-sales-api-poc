@@ -1,13 +1,16 @@
 // controllers/userController.js
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
-
+import bcrypt from 'bcryptjs';
 // CREATE a new User
 export const createUser = async (req, res) => {
   try {
-    const { tenantId, email, passwordHash, role = 'MANAGER', verified = false } = req.body;
 
-    if (!tenantId || !email || !passwordHash) {
+    const {tenantId} = req.user;
+
+    const { email, password, role = 'MANAGER', verified = false } = req.body;
+
+    if (!tenantId || !email || !password) {
       return res.status(400).json({ error: 'tenantId, email, and passwordHash are required' });
     }
 
@@ -16,11 +19,13 @@ export const createUser = async (req, res) => {
       return res.status(400).json({ error: 'User already exists' });
     }
 
+    const hashedPassword = await bcrypt.hash(password, 10);;
+
     const newUser = await prisma.user.create({
       data: {
         tenantId,
         email,
-        passwordHash,
+        passwordHash : hashedPassword,
         role,
         verified,
       },
@@ -36,11 +41,12 @@ export const createUser = async (req, res) => {
 // GET all active users for a tenant
 export const getUsers = async (req, res) => {
   try {
-    const { tenantId } = req.query;
 
-    if (!tenantId) {
-      return res.status(400).json({ error: 'tenantId is required in query' });
-    }
+    const { tenantId } = req.user;
+    
+    // if (!tenantId) {
+    //   return res.status(400).json({ error: 'tenantId is required in query' });
+    // }
 
     const users = await prisma.user.findMany({
       where: {
@@ -89,7 +95,8 @@ export const getUserById = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { tenantId, ...updates } = req.body;
+    const { tenantId } = req.user;
+    const {  ...updates } = req.body;
 
     if (!tenantId) {
       return res.status(400).json({ error: 'tenantId is required in request body' });
@@ -125,7 +132,7 @@ export const updateUser = async (req, res) => {
 export const deleteUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { tenantId } = req.body;
+    const { tenantId } = req.user;
 
     if (!tenantId) {
       return res.status(400).json({ error: 'tenantId is required in request body' });
