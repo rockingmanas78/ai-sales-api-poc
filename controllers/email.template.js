@@ -1,5 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { ALLOWED_VARS } from '../constants/template.constants.js';
+import axios from 'axios';
+import { AI_SERVICE_ENDPOINT } from '../constants/endpoints.constants.js';
 const prisma = new PrismaClient();
 
 
@@ -105,6 +107,50 @@ export const createTemplate = async (req, res) => {
     });
 
     return res.status(201).json(newTemplate);
+  } catch (error) {
+    console.error("Error creating template:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const createAiTemplate = async (req, res) => {
+  try {
+    const { payload } = req.body;
+    const tenantId = req.user.tenantId;
+
+    // 1️⃣ Required‐fields check
+    if (!payload) {
+      return res.status(400).json({ message: "Required fields missing" });
+    }
+
+    // 2️⃣ Tenant existence check
+    const tenantExists = await prisma.tenant.findFirst({
+      where: { id: tenantId, deletedAt: null }
+    });
+    if (!tenantExists) {
+      return res.status(404).json({ error: "Tenant not found" });
+    }
+
+    const incomingAuth = req.headers.authorization;
+    if (!incomingAuth) {
+      return res.status(401).json({ error: "Missing Authorization header" });
+    }
+
+    console.log(incomingAuth);
+
+    const { data } = await axios.post(
+      `${AI_SERVICE_ENDPOINT}/api/email/template`,
+      payload ,
+      {
+        headers: {
+          Authorization: incomingAuth,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    console.log("AI service returned data:", data);
+
+    return res.status(201).json(data);
   } catch (error) {
     console.error("Error creating template:", error);
     return res.status(500).json({ error: "Internal server error" });

@@ -67,15 +67,15 @@ export const createCampaign = async (req, res) => {
 
     // 7) Prevent duplicates
     // CHECK THIS
-    const existingCampaign = await prisma.emailCampaign.findFirst({
-      where: { tenantId, templateId, scheduledAt },
-    });
-    if (existingCampaign) {
-      return res.status(409).json({
-        error:
-          "A campaign with the same tenant, template and scheduled time already exists",
-      });
-    }
+    // const existingCampaign = await prisma.emailCampaign.findFirst({
+    //   where: { tenantId, scheduledAt },
+    // });
+    // if (existingCampaign) {
+    //   return res.status(409).json({
+    //     error:
+    //       "A campaign with the same tenant and scheduled time already exists",
+    //   });
+    // }
 
     // 8) Finally, create it
     const campaign = await prisma.emailCampaign.create({
