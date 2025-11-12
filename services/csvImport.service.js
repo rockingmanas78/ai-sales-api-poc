@@ -683,6 +683,7 @@ const processRow = async (row, job, dedupePolicy, importMode) => {
 
   const validationErrors = validateRowData(row, rawData);
   if (validationErrors.length > 0) {
+    console.log(`[validateRowData] Raw data for row ${row}:`, rawData);
     const errorString = validationErrors.join("; ");
     console.warn(
       `[processRow] Validation FAILED for row ${row.rowNumber} (rowId: ${row.id}). Errors: ${errorString}`
