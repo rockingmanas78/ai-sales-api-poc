@@ -519,7 +519,6 @@ const validateRowData = (row, rawData) => {
 export const processCsvImportJob = async (jobId) => {
   try {
     const batchSize = 5;
-    console.log(`[processCsvImportJob] Starting batch for job: ${jobId}`); // Fetch job details
 
     const job = await fetchJobDetails(jobId);
     if (!job) {
@@ -709,8 +708,8 @@ const processRow = async (row, job, dedupePolicy, importMode) => {
   ] = rawData;
   const mappedFields = {
     companyName,
-    contactName,
     contactEmail,
+    contactName,
     contactPhone,
     linkedInUrl,
     companySize: parseInt(companySize, 10),
@@ -729,7 +728,6 @@ const processRow = async (row, job, dedupePolicy, importMode) => {
   ); // Ensure contactEmail is an array if required by Prisma schema
 
   const contactEmailArray = email ? [email] : []; // Deduplication logic
-
   console.log(`[processRow] Dedupe policy: ${dedupePolicy}.`);
   let existingLead = null;
   if (dedupePolicy === "EMAIL" && email) {

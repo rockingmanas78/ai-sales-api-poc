@@ -235,7 +235,10 @@ export async function processNextBatch() {
   const windowsPerHour = Math.max(1, Math.floor(3600000 / effectiveWindowMs));
 
   const dueJobs = await prisma.bulkEmailJob.findMany({
-    where: { status: { in: ["QUEUED", "PROCESSING"] }, nextProcessTime: { lte: now } },
+    where: {
+      status: { in: ["QUEUED", "PROCESSING"] },
+      nextProcessTime: { lte: now },
+    },
     include: { template: true },
   });
 
@@ -267,7 +270,10 @@ export async function processNextBatch() {
 
       // how many we can send this window
       // If rateLimit = emails/hour, perWindow = ceil(rateLimit * (windowMs/3600000))
-      const perWindow = Math.max(1, Math.ceil(job.rateLimit * (effectiveWindowMs / 3600000)));
+      const perWindow = Math.max(
+        1,
+        Math.ceil(job.rateLimit * (effectiveWindowMs / 3600000))
+      );
       console.log("[bulk] computed perWindow", { ...jobCtx, perWindow });
 
       const jobLeads = await prisma.bulkEmailJobLead.findMany({
@@ -305,7 +311,10 @@ export async function processNextBatch() {
             select: { domainName: true },
           });
           if (!inboundSubdomain) {
-            console.error("[bulk] no verified inbound subdomain; marking FAILED", leadCtx);
+            console.error(
+              "[bulk] no verified inbound subdomain; marking FAILED",
+              leadCtx
+            );
             await prisma.bulkEmailJobLead.update({
               where: { id: jobLead.id },
               data: { status: "FAILED", attempts: { increment: 1 } },
@@ -357,16 +366,22 @@ export async function processNextBatch() {
 
             const fromEmail = (draft.from || [])[0];
             if (!fromEmail) {
-              console.error("[bulk] draft missing from; marking FAILED", { ...leadCtx, draftId: draft.id });
+              console.error("[bulk] draft missing from; marking FAILED", {
+                ...leadCtx,
+                draftId: draft.id,
+              });
               await prisma.bulkEmailJobLead.update({
                 where: { id: jobLead.id },
                 data: { status: "FAILED", attempts: { increment: 1 } },
               });
               continue;
             }
-            const htmlBody = draft.html || (draft.text || "");
+            const htmlBody = draft.html || draft.text || "";
 
-            console.log("[bulk] sending DRAFT", { ...leadCtx, draftId: draft.id });
+            console.log("[bulk] sending DRAFT", {
+              ...leadCtx,
+              draftId: draft.id,
+            });
             try {
               const sendResponse = await sendEmail({
                 fromEmail,
@@ -377,29 +392,39 @@ export async function processNextBatch() {
                 replyToAddresses: [replyToAddress],
                 messageTags: [
                   { Name: "tenantId", Value: job.tenantId },
-                  ...(job.campaignId ? [{ Name: "campaignId", Value: job.campaignId }] : []),
+                  ...(job.campaignId
+                    ? [{ Name: "campaignId", Value: job.campaignId }]
+                    : []),
                   { Name: "leadId", Value: lead.id },
                 ],
               });
 
               const providerMessageId = sendResponse?.MessageId;
-              if (!providerMessageId) throw new Error("SES did not return MessageId");
+              if (!providerMessageId)
+                throw new Error("SES did not return MessageId");
 
               await prisma.$transaction(async (tx) => {
                 await tx.emailMessage.update({
                   where: { id: draft.id },
                   data: {
-                    providerMessageId,                 // overwrite generated-*
+                    providerMessageId, // overwrite generated-*
                     sentAt: draft.sentAt ?? new Date(),
                     lastDeliveryStatus: "SENT",
                     lastEventAt: new Date(),
-                    headers: { ...(draft.headers || {}), "Reply-To": replyToAddress },
+                    headers: {
+                      ...(draft.headers || {}),
+                      "Reply-To": replyToAddress,
+                    },
                   },
                 });
 
                 await tx.bulkEmailJobLead.update({
                   where: { id: jobLead.id },
-                  data: { status: "SENT", sentAt: new Date(), attempts: { increment: 1 } },
+                  data: {
+                    status: "SENT",
+                    sentAt: new Date(),
+                    attempts: { increment: 1 },
+                  },
                 });
 
                 await tx.conversation.update({
@@ -420,9 +445,15 @@ export async function processNextBatch() {
                 });
               });
 
-              console.log("[bulk] DRAFT sent", { ...leadCtx, providerMessageId });
+              console.log("[bulk] DRAFT sent", {
+                ...leadCtx,
+                providerMessageId,
+              });
             } catch (sendErr) {
-              console.error("[bulk] send error (DRAFT)", { ...leadCtx, error: String(sendErr?.message || sendErr) });
+              console.error("[bulk] send error (DRAFT)", {
+                ...leadCtx,
+                error: String(sendErr?.message || sendErr),
+              });
               const updated = await prisma.bulkEmailJobLead.update({
                 where: { id: jobLead.id },
                 data: { attempts: { increment: 1 } },
@@ -441,7 +472,10 @@ export async function processNextBatch() {
 
           // ============== MODE A: TEMPLATE (existing) ==================
           if (!job.template || !job.template.from) {
-            console.error("[bulk] template missing or no from; marking FAILED", leadCtx);
+            console.error(
+              "[bulk] template missing or no from; marking FAILED",
+              leadCtx
+            );
             await prisma.bulkEmailJobLead.update({
               where: { id: jobLead.id },
               data: { status: "FAILED", attempts: { increment: 1 } },
@@ -459,10 +493,16 @@ export async function processNextBatch() {
 
           let renderedSubject, renderedHtml;
           try {
-            renderedSubject = mustache.render(job.template.subject, templateVars);
+            renderedSubject = mustache.render(
+              job.template.subject,
+              templateVars
+            );
             renderedHtml = mustache.render(job.template.body, templateVars);
           } catch (e) {
-            console.error("[bulk] template render failed; marking FAILED", { ...leadCtx, error: String(e?.message || e) });
+            console.error("[bulk] template render failed; marking FAILED", {
+              ...leadCtx,
+              error: String(e?.message || e),
+            });
             await prisma.bulkEmailJobLead.update({
               where: { id: jobLead.id },
               data: { status: "FAILED", attempts: { increment: 1 } },
@@ -485,18 +525,26 @@ export async function processNextBatch() {
               messageTags: [
                 { Name: "tenantId", Value: job.tenantId },
                 { Name: "replyToToken", Value: plusToken },
-                ...(job.campaignId ? [{ Name: "campaignId", Value: job.campaignId }] : []),
+                ...(job.campaignId
+                  ? [{ Name: "campaignId", Value: job.campaignId }]
+                  : []),
                 { Name: "leadId", Value: lead.id },
               ],
             });
 
             const providerMessageId = sendResponse?.MessageId;
-            if (!providerMessageId) throw new Error("SES did not return MessageId");
+            if (!providerMessageId)
+              throw new Error("SES did not return MessageId");
 
             await prisma.$transaction(async (tx) => {
               // Upsert conversation by threadKey=plusToken
               let conv = await tx.conversation.findUnique({
-                where: { tenantId_threadKey: { tenantId: job.tenantId, threadKey: plusToken } },
+                where: {
+                  tenantId_threadKey: {
+                    tenantId: job.tenantId,
+                    threadKey: plusToken,
+                  },
+                },
               });
               if (!conv) {
                 conv = await tx.conversation.create({
@@ -511,11 +559,20 @@ export async function processNextBatch() {
                 });
               } else {
                 const existing = await tx.conversation.findUnique({
-                  where: { tenantId_threadKey: { tenantId: job.tenantId, threadKey: plusToken } },
+                  where: {
+                    tenantId_threadKey: {
+                      tenantId: job.tenantId,
+                      threadKey: plusToken,
+                    },
+                  },
                   select: { participants: true, subject: true },
                 });
                 const mergedParticipants = Array.from(
-                  new Set([...(existing?.participants || []), job.template.from, toEmail])
+                  new Set([
+                    ...(existing?.participants || []),
+                    job.template.from,
+                    toEmail,
+                  ])
                 );
                 await tx.conversation.update({
                   where: { id: conv.id },
@@ -528,7 +585,7 @@ export async function processNextBatch() {
                 });
               }
 
-              await tx.emailMessage.create({
+              const emailMessageCreated = await tx.emailMessage.create({
                 data: {
                   tenantId: job.tenantId,
                   conversationId: conv.id,
@@ -552,25 +609,35 @@ export async function processNextBatch() {
 
               await tx.bulkEmailJobLead.update({
                 where: { id: jobLead.id },
-                data: { status: "SENT", sentAt: new Date(), attempts: { increment: 1 } },
+                data: {
+                  status: "SENT",
+                  sentAt: new Date(),
+                  attempts: { increment: 1 },
+                },
               });
 
               await tx.emailEvent.create({
                 data: {
                   tenantId: job.tenantId,
-                  emailMessageId: conv.id, // NOTE: this should be the EmailMessage.id; we'll fix below
+                  emailMessageId: emailMessageCreated.id, // NOTE: changed from conv.id to emailMessageCreated.id
                   providerMessageId,
                   eventType: "Send",
                   occurredAt: new Date(),
                   payload: {},
-                  snsMessageId: `local-send-template-${conv.id}-${Date.now()}`,
+                  snsMessageId: `local-send-template-${conv.id}-${Date.now()}`, // NOTE: unsure what to use here among conv.id and emailMessageCreated.id
                 },
               });
             });
 
-            console.log("[bulk] TEMPLATE sent", { ...leadCtx, providerMessageId });
+            console.log("[bulk] TEMPLATE sent", {
+              ...leadCtx,
+              providerMessageId,
+            });
           } catch (sendErr) {
-            console.error("[bulk] send error (TEMPLATE)", { ...leadCtx, error: String(sendErr?.message || sendErr) });
+            console.error("[bulk] send error (TEMPLATE)", {
+              ...leadCtx,
+              error: String(sendErr?.message || sendErr),
+            });
             const updated = await prisma.bulkEmailJobLead.update({
               where: { id: jobLead.id },
               data: { attempts: { increment: 1 } },
@@ -583,7 +650,10 @@ export async function processNextBatch() {
             });
           }
         } catch (leadErr) {
-          console.error("[bulk] unexpected error per lead", { ...leadCtx, error: String(leadErr?.message || leadErr) });
+          console.error("[bulk] unexpected error per lead", {
+            ...leadCtx,
+            error: String(leadErr?.message || leadErr),
+          });
           await prisma.bulkEmailJobLead.update({
             where: { id: jobLead.id },
             data: { status: "FAILED", attempts: { increment: 1 } },
@@ -596,7 +666,9 @@ export async function processNextBatch() {
         where: { jobId: job.id, status: "QUEUED" },
       });
       const processedCount = job.total - remainingQueued; // SENT+FAILED considered progress
-      const nextTime = remainingQueued ? new Date(Date.now() + effectiveWindowMs) : null;
+      const nextTime = remainingQueued
+        ? new Date(Date.now() + effectiveWindowMs)
+        : null;
 
       await prisma.bulkEmailJob.update({
         where: { id: job.id },
@@ -628,12 +700,14 @@ export async function processNextBatch() {
       });
       await prisma.bulkEmailJob.update({
         where: { id: job.id },
-        data: { status: "QUEUED", nextProcessTime: new Date(Date.now() + effectiveWindowMs) },
+        data: {
+          status: "QUEUED",
+          nextProcessTime: new Date(Date.now() + effectiveWindowMs),
+        },
       });
     }
   }
 }
-
 
 /**
  * Worker loop: run every minute, pick up any job whose nextProcessTime ≤ now,
