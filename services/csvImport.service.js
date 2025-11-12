@@ -701,10 +701,10 @@ const processRow = async (row, job, dedupePolicy, importMode) => {
 
   const [
     companyName,
-    contactName,
     contactEmail,
-    contactPhone,
-    linkedInUrl,
+    contactName,
+    contactPhone, // Optional
+    linkedInUrl, // Optional
     companySize,
   ] = rawData;
   const mappedFields = {
