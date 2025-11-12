@@ -191,7 +191,7 @@ export const getCampaignById = async (req, res) => {
       },
       include: {
         template: true,
-        logs: true,
+        // logs: true,
       },
     });
 
