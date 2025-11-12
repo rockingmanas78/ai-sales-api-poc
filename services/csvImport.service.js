@@ -439,7 +439,7 @@ const validateRowData = (row, rawData) => {
   const errors = [];
 
   // Log the raw data for debugging
-  console.log(`[validateRowData] Raw data for row ${row.rowNumber}:`, rawData);
+  console.log(`[validateRowData] Raw data for row ${row}:`, rawData);
 
   // Ensure the rawData has at least the first 3 required fields
   if (!Array.isArray(rawData) || rawData.length < 3) {
@@ -452,8 +452,8 @@ const validateRowData = (row, rawData) => {
   // Validate each field in the specified order
   const [
     companyName,
-    contactName,
     contactEmail,
+    contactName,
     contactPhone, // Optional
     linkedInUrl, // Optional
     companySize, // Optional
