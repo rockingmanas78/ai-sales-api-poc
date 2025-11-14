@@ -1,5 +1,7 @@
+import axios from "axios";
 import { ingestCompanyProfile } from "../services/ai.service.js";
 import prisma from "../utils/prisma.client.js";
+import { AI_SERVICE_ENDPOINT } from "../constants/endpoints.constants.js";
 
 export const getCompanyProfile = async (req, res) => {
   try {
@@ -20,6 +22,44 @@ export const getCompanyProfile = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
+export const getKnowledgeBaseStatus = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const tenantExists = await prisma.tenant.findFirst({
+      where: { id: tenantId, deletedAt: null }
+    });
+    if (!tenantExists) {
+      return res.status(404).json({ error: "Tenant not found" });
+    }
+
+    const incomingAuth = req.headers.authorization;
+    if (!incomingAuth) {
+      return res.status(401).json({ error: "Missing Authorization header" });
+    }
+
+    console.log(incomingAuth);
+
+    const { data } = await axios.post(
+      `${AI_SERVICE_ENDPOINT}/api/ingest/readiness`,
+      {},
+      {
+        headers: {
+          Authorization: incomingAuth,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    console.log("AI service returned data:", data);
+
+    return res.status(201).json(data);
+  }
+  
+  catch(error) {
+    console.error("Error fetching knowledge base status:", error);
+    res.status(500).json({ message: "Internal server error" , error: error.message});
+  }
+}
 
 export const createCompanyProfile = async (req, res) => {
   const tenantId = req.user?.tenantId;
