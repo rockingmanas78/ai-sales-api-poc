@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import AWS from "aws-sdk";
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import path from "path";
+import { ingestKnowledgeDocument } from "../services/ai.service.js";
 
 const ALLOWED_MIME_TYPES = [
   "application/pdf",
@@ -84,18 +85,17 @@ export const uploadDocument = async (req, res) => {
     const mimetype = req.file.mimetype;
     if (!ALLOWED_MIME_TYPES.includes(mimetype)) {
       return res.status(400).json({
-        error: `Unsupported file type. Allowed types: ${ALLOWED_MIME_TYPES.join(", ")}`,
+        error: `Unsupported file type. Allowed types: ${ALLOWED_MIME_TYPES.join(
+          ", "
+        )}`,
       });
     }
 
     const file = req.file;
-    console.log(file);
     const ext = path.extname(file.originalname);
-    console.log(ext);
     const fileKey = `documents/${uuidv4()}${ext}`;
-    console.log(fileKey );
-
-    const BUCKET = process.env.S3_BUCKET_DOCS || "sale-funnel-knowledge-documents";
+    const BUCKET =
+      process.env.S3_BUCKET_DOCS || "sale-funnel-knowledge-documents";
 
     const uploadParams = {
       Bucket: BUCKET,
@@ -105,32 +105,59 @@ export const uploadDocument = async (req, res) => {
     };
 
     await s3.send(new PutObjectCommand(uploadParams));
+    console.log("Uploaded file to S3:", fileKey);
 
-    console.log("Uploaded")
-
-    // After upload, record document metadata in database
     const tenantId = req.user?.tenantId;
     if (!tenantId) {
-      return res.status(400).json({ error: "Missing tenant ID in user context" });
+      return res
+        .status(400)
+        .json({ error: "Missing tenant ID in user context" });
     }
 
-    const doc = await prisma.knowledgeDocument.create({
-      data: {
-        tenant_id: tenantId,
-        file_key: fileKey,
-        filename: file.originalname,
-        mime_type: mimetype,
-        size_bytes: file.size,
-      },
-    });
+    let doc;
+    try {
+      // After upload, record document metadata in database
+      doc = await prisma.knowledgeDocument.create({
+        data: {
+          tenant_id: tenantId,
+          file_key: fileKey,
+          filename: file.originalname,
+          mime_type: mimetype,
+          size_bytes: file.size,
+        },
+      });
+    } catch (dbErr) {
+      console.error("Prisma error creating document record:", dbErr);
+      // If DB fails, we can't ingest anyway.
+      return res
+        .status(500)
+        .json({ message: "Failed to create document record", error: dbErr.message });
+    }
+
+    // --- Trigger Ingestion ---
+    try {
+      // Following the pattern from createWebsite, pass req.headers
+      await ingestKnowledgeDocument(doc.id, req.headers);
+      console.log(`Triggered ingestion for KnowledgeDocument: ${doc.id}`);
+    } catch (aiErr) {
+      console.error(`AI ingestion error for doc ${doc.id}:`, aiErr);
+      // Follow pattern from createWebsite: return 502
+      return res.status(502).json({
+        message: "File uploaded, but failed to trigger ingestion",
+        error: aiErr?.response?.data || aiErr.message,
+        record: doc,
+      });
+    }
+    // --- End Ingestion ---
 
     return res.status(200).json({
-      message: "Document uploaded and recorded successfully",
+      message: "Document uploaded and ingestion triggered successfully",
       fileKey,
       s3Url: `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`,
       documentRecord: doc,
     });
   } catch (error) {
+    // This outer catch handles S3/file-reading errors
     console.error("Error uploading or recording document:", error);
     return res.status(500).json({ error: "Internal server error" });
   }

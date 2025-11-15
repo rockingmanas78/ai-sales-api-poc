@@ -7,13 +7,16 @@ export const createSnippet = async (req, res) => {
     const tenantId = req.user?.tenantId;
 
     if (!tenantId) {
-      return res.status(400).json({ message: "Missing tenant ID in user context" });
+      return res
+        .status(400)
+        .json({ message: "Missing tenant ID in user context" });
     }
 
     if (!text || text.trim() === "") {
       return res.status(400).json({ message: "Text content is required" });
     }
 
+    // 1. Create the database record
     const snippet = await prisma.bulkSnippet.create({
       data: {
         tenant_id: tenantId,
@@ -21,10 +24,29 @@ export const createSnippet = async (req, res) => {
       },
     });
 
-    res.status(201).json({ message: 'Snippet created successfully', snippet });
+    // 2. Trigger ingestion
+    try {
+      // Assuming the function is named ingestBulkSnippet
+      await ingestBulkSnippet(snippet.id, req.headers);
+      console.log(`Triggered ingestion for BulkSnippet: ${snippet.id}`);
+    } catch (aiErr) {
+      console.error(`AI ingestion error for snippet ${snippet.id}:`, aiErr);
+      // Return 502 if ingestion fails, but record was created
+      return res.status(502).json({
+        message: "Snippet created but ingestion failed",
+        error: aiErr?.response?.data || aiErr.message,
+        record: snippet,
+      });
+    }
+
+    // 3. Return full success
+    res
+      .status(201)
+      .json({ message: "Snippet created and ingestion triggered", snippet });
   } catch (error) {
-    console.error('Error creating snippet:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    // This outer catch now primarily handles DB errors
+    console.error("Error creating snippet:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
