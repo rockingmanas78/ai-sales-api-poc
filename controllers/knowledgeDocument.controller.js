@@ -135,9 +135,10 @@ export const uploadDocument = async (req, res) => {
     }
 
     // --- Trigger Ingestion ---
+    let aiData;
     try {
       // Following the pattern from createWebsite, pass req.headers
-      await ingestKnowledgeDocument(doc.id, req.headers);
+      aiData = await ingestKnowledgeDocument(doc.id, req.headers);
       console.log(`Triggered ingestion for KnowledgeDocument: ${doc.id}`);
     } catch (aiErr) {
       console.error(`AI ingestion error for doc ${doc.id}:`, aiErr);
@@ -155,6 +156,7 @@ export const uploadDocument = async (req, res) => {
       fileKey,
       s3Url: `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`,
       documentRecord: doc,
+      aiData: aiData.data,
     });
   } catch (error) {
     // This outer catch handles S3/file-reading errors

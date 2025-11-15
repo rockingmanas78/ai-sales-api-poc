@@ -39,12 +39,16 @@ export async function getSpamScore(emailBody, incomingAuth) {
  * @param {string} id
  */
 async function triggerIngest(url, authHeader, logContext, id) {
-  console.log(`Triggering ingestion for ${logContext}: ${id}`);
+  console.log(`Triggering ingestion for ${url} ${logContext}: ${id}`);
+  console.log("auth" , authHeader)
   try {
     // The curl command has no data body, so we pass `null` for the body.
-    const resp = await axios.post(url, null, {
+    const resp = await axios.post(url, {}, {
       // httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-      headers: authHeader,
+      headers: {
+          Authorization: authHeader.authorization,
+          "Content-Type": "application/json",
+        },
       // Ingestion might take longer than a simple spam check
       timeout: 0, 
     });

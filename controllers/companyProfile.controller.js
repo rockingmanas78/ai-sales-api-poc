@@ -69,7 +69,7 @@ export const createCompanyProfile = async (req, res) => {
   }
 
   const data = { ...req.body, tenant_id: tenantId };
-  let created;
+  let created ;
 
   try {
     created = await prisma.companyProfile.create({ data });
@@ -79,16 +79,18 @@ export const createCompanyProfile = async (req, res) => {
     return res.status(500).json({ message: "Failed to create company profile", error: dbError.message });
   }
 
+  let aiData;
+
   try {
-    const resp = await ingestCompanyProfile(created.id, req.headers);
-    console.log(resp)
+    aiData = await ingestCompanyProfile(created.id, req.headers);
+    console.log(aiData)
   } catch (aiError) {
     console.error("AI ingestion error:", aiError);
     // Optionally update DB or send a notification about the ingestion failure
     return res.status(502).json({ message: "Company created but ingestion failed", error: aiError.message, record: created });
   }
 
-  return res.status(201).json(created);
+  return res.status(201).json({ created, aiData : aiData.data });
 };
 
 
