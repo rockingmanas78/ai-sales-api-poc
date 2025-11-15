@@ -10,7 +10,7 @@ export const getAllProducts = async (req, res) => {
       where: { tenant_id: tenantId },
     });
 
-    if (!company) return res.status(404).json({ message: "Company not found" });
+    if (!company) return res.status(404).json({ message: "Company not found. First register your company profile." });
 
     const products = await prisma.product.findMany({
       where: {

@@ -22,16 +22,23 @@ export const createWebsite = async (req, res) => {
   } catch (dbErr) {
     console.error("Prisma error creating website:", dbErr);
     // Optionally parse and customize Prisma error response
-    return res.status(500).json({ message: "Failed to create website record", error: dbErr.message });
+    return res
+      .status(500)
+      .json({ message: "Failed to create website record", error: dbErr.message });
   }
 
   try {
+    // This call correctly passes req.headers, as expected by triggerIngest
     const resp = await ingestWebsiteContent(newSite.id, req.headers);
-    console.log(resp);
+    console.log("Ingestion triggered for website:", newSite.id, resp.status);
   } catch (aiErr) {
     console.error("AI ingestion error:", aiErr);
     // Optionally record status update for failed ingest, or notify user
-    return res.status(502).json({ message: "Failed to ingest website content", error: aiErr.message, record: newSite });
+    return res.status(502).json({
+      message: "Failed to ingest website content",
+      error: aiErr?.response?.data || aiErr.message,
+      record: newSite,
+    });
   }
 
   return res.status(201).json(newSite);
