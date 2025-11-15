@@ -68,7 +68,6 @@ export const createCompanyQABulk = async (req, res) => {
       return res.status(404).json({ message: "Company profile not found" });
     }
 
-    // Fetch all existing questions for this company (case-insensitive, trimmed)
     const existingQAs = await prisma.companyQA.findMany({
       where: { company_id: company.id },
       select: { question: true },
@@ -77,7 +76,6 @@ export const createCompanyQABulk = async (req, res) => {
       existingQAs.map((q) => `${q.question}`.trim().toLowerCase())
     );
 
-    // Remove duplicates within the same request (case-insensitive, trimmed)
     const seen = new Set();
     const uniqueNewQAs = [];
     for (const qa of questionAnswerList) {
@@ -89,7 +87,6 @@ export const createCompanyQABulk = async (req, res) => {
       }
     }
 
-    // Only add QAs whose question does not already exist for this company
     const newQAs = uniqueNewQAs.filter((qa) => {
       const key = `${qa.question}`.trim().toLowerCase();
       return !existingQuestions.has(key);
@@ -108,40 +105,58 @@ export const createCompanyQABulk = async (req, res) => {
         )
       );
     }
+    // --- End duplicate checking ---
 
-    // --- NEW: Trigger ingestion for all newly created items ---
+    let aiData = []; // Default to an empty array
+    
     if (created.length > 0) {
-      const authHeader = req.headers.authorization; // Get the auth header from the request
-
-      if (!authHeader) {
+      const authHeader = req.headers;
+      if (!authHeader?.authorization) { // Check for auth specifically
         console.warn(
           "No auth header found; skipping ingestion for new Company QAs."
         );
       } else {
         console.log(`Triggering ingestion for ${created.length} new Company QAs...`);
         
-        // Use Promise.allSettled to try all ingestions even if some fail
         const ingestPromises = created.map((qa) =>
           ingestCompanyQa(qa.id, authHeader)
         );
 
         const results = await Promise.allSettled(ingestPromises);
 
-        results.forEach((result, index) => {
-          if (result.status === "rejected") {
+        // --- START OF FIX ---
+        // Process the results into a clean, serializable array
+        aiData = results.map((result, index) => {
+          if (result.status === "fulfilled") {
+            // Success: return only the AI service's response *data*
+            return {
+              status: "fulfilled",
+              qa_id: created[index].id,
+              data: result.value.data, // This is serializable
+            };
+          } else {
+            // Failure: log the complex error, return a simple one
+            const errorMsg = result.reason?.response?.data || result.reason.message;
             console.error(
               `Failed to ingest CompanyQA ID ${created[index].id}:`,
-              result.reason
+              errorMsg
             );
+            return {
+              status: "rejected",
+              qa_id: created[index].id,
+              error: errorMsg, // This is serializable
+            };
           }
         });
+        // --- END OF FIX ---
         
         console.log("Company QA ingestion triggers completed.");
       }
     }
-    // --- End of new block ---
 
-    res.status(201).json({ message: "QAs created", created });
+    // This is now safe to send
+    res.status(201).json({ message: "QAs created", created, aiData });
+
   } catch (err) {
     console.error("Error creating QA pairs:", err);
     res.status(500).json({ message: "Internal server error" });

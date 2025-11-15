@@ -27,10 +27,11 @@ export const createWebsite = async (req, res) => {
       .json({ message: "Failed to create website record", error: dbErr.message });
   }
 
+  let aiData;
   try {
     // This call correctly passes req.headers, as expected by triggerIngest
-    const resp = await ingestWebsiteContent(newSite.id, req.headers);
-    console.log("Ingestion triggered for website:", newSite.id, resp.status);
+    aiData = await ingestWebsiteContent(newSite.id, req.headers);
+    console.log("Ingestion triggered for website:", newSite.id, aiData.status);
   } catch (aiErr) {
     console.error("AI ingestion error:", aiErr);
     // Optionally record status update for failed ingest, or notify user
@@ -38,6 +39,7 @@ export const createWebsite = async (req, res) => {
       message: "Failed to ingest website content",
       error: aiErr?.response?.data || aiErr.message,
       record: newSite,
+      aiData: aiData.data,
     });
   }
 

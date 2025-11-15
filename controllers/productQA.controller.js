@@ -80,6 +80,8 @@ export const bulkCreateQA = async (req, res) => {
 
     // --- Trigger Ingestion ---
 
+    let aiData;
+
     console.log(`Triggering ingestion for ${created.length} new Product QAs...`);
 
     const ingestPromises = created.map((qa) =>
@@ -88,6 +90,7 @@ export const bulkCreateQA = async (req, res) => {
 
     // Run in parallel and log any failures without stopping the response
     const results = await Promise.allSettled(ingestPromises);
+    aiData = results;
 
     results.forEach((result, index) => {
       if (result.status === "rejected") {
@@ -105,6 +108,7 @@ export const bulkCreateQA = async (req, res) => {
       message: "QAs created successfully",
       created, // Send the full created objects
       count: created.length,
+      aiData: aiData,
     });
 
   } catch (err) {
