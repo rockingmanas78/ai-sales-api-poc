@@ -113,3 +113,48 @@ export const getViewUsage = async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
+export const getHealthDeliverability = async (req, res) => {
+  try {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: "Tenant ID is required" });
+    }
+
+    const totalEmailsSent = await prisma.emailMessage.count({
+      where: {
+        tenantId,
+      },
+    });
+    const totalDelivered = await prisma.emailMessage.count({
+      where: {
+        tenantId,
+        lastDeliveryStatus: {
+          in: ["DELIVERED", "OPENED", "CLICKED", "COMPLAINED"],
+        },
+      },
+    });
+    const totalOpened = await prisma.emailMessage.count({
+      where: {
+        tenantId,
+        lastDeliveryStatus: "OPENED",
+      },
+    });
+
+    const deliverabilityRate =
+      totalDelivered === 0 ? 0 : (totalDelivered / totalEmailsSent) * 100;
+    const openRate =
+      totalDelivered === 0 ? 0 : (totalOpened / totalDelivered) * 100;
+    const bounceRate =
+      totalEmailsSent === 0
+        ? 0
+        : ((totalEmailsSent - totalDelivered) / totalEmailsSent) * 100;
+
+    const healthData = { deliverabilityRate, openRate, bounceRate };
+
+    res.status(200).json({ success: true, healthData });
+  } catch (error) {
+    console.error("Error in getHealthDeliverability:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};

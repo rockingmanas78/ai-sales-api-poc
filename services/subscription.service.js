@@ -54,7 +54,7 @@ export async function startPaymentService(params) {
     // Begin transaction
     const result = await prisma.$transaction(async (tx) => {
       // Mark all other tenant subscriptions as PAUSED
-      const updateResult = await tx.subscription.updateMany({
+      await tx.subscription.updateMany({
         where: { tenantId: tenant.id, status: "ACTIVE" },
         data: { status: "PAUSED" },
       });
@@ -74,10 +74,14 @@ export async function startPaymentService(params) {
       // );
       for (const sub of pausedSubs) {
         try {
-          const cancelResult = await cancelRazorpaySubscription(
-            sub.providerSubId,
-            { cancel_at_cycle_end: false }
-          );
+          // const cancelResult =
+          await cancelRazorpaySubscription(sub.providerSubId, {
+            cancel_at_cycle_end: false,
+          });
+          await tx.subscription.update({
+            where: { id: sub.id },
+            data: { status: "CANCELED" },
+          });
           // console.log(
           //   `[startPaymentService] Cancelled Razorpay subscription for subId ${sub.id}:`,
           //   cancelResult
