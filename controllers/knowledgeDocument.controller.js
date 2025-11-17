@@ -165,17 +165,6 @@ export const uploadDocument = async (req, res) => {
   }
 };
 
-export const generatePresignedUrl = async (req, res) => {
-  const { filename, mimeType } = req.body;
-
-  const fileKey = `documents/${uuidv4()}-${filename}`;
-
-  //generate a signed S3 URL here
-  const uploadUrl = `https://your-bucket.s3.amazonaws.com/${fileKey}`;
-
-  res.status(200).json({ uploadUrl, fileKey });
-};
-
 export const recordUploadedDocument = async (req, res) => {
   const { fileKey, filename, mimeType, sizeBytes } = req.body;
   const tenantId = req.user?.tenantId;

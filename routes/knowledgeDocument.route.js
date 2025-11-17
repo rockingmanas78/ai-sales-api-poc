@@ -1,7 +1,5 @@
 import express from "express";
 import {
-  generatePresignedUrl,
-  recordUploadedDocument,
   listDocuments,
   getDocumentById,
   updateDocument,
@@ -16,14 +14,6 @@ import multer from "multer";
 const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
-
-//Generate presigned S3 URL
-// router.post(
-//   "/presign",
-//   verifyToken(),
-//   authorize("manage_documents"),
-//   generatePresignedUrl
-// );
 
 router.post(
   "/upload",
