@@ -79,11 +79,11 @@ const checkAndRecordUsage = async (tenantId, metric, quantity = 1) => {
 
           const currentDailyCount = dailyUsage ? dailyUsage.qty : 0;
           if (currentDailyCount + quantity > dailyLimit) {
-             return {
-             allowed: false,
-             reason: `You have reached your daily limit of ${dailyLimit}.`,
-             status: 429,
-           };
+            return {
+              allowed: false,
+              reason: `You have reached your daily limit of ${dailyLimit}.`,
+              status: 429,
+            };
           }
         }
       }
@@ -102,11 +102,11 @@ const checkAndRecordUsage = async (tenantId, metric, quantity = 1) => {
 
           const currentMonthlyCount = monthlyUsage._sum.qty || 0;
           if (currentMonthlyCount + quantity > monthlyLimit) {
-             return {
-             allowed: false,
-             reason: `You have reached your monthly limit of ${monthlyLimit}.`,
-             status: 429,
-           };
+            return {
+              allowed: false,
+              reason: `You have reached your monthly limit of ${monthlyLimit}.`,
+              status: 429,
+            };
           }
         }
       }
@@ -161,6 +161,7 @@ const checkAndRecordUsage = async (tenantId, metric, quantity = 1) => {
         update: { qty: { increment: quantity } },
         create: { tenantId, date: today, metric, qty: quantity },
       });
+      console.log("Done");
 
       return { allowed: true };
     });
@@ -202,12 +203,11 @@ const checkAndRecordUsage = async (tenantId, metric, quantity = 1) => {
   }
 };
 
-
 /**
  * Middleware to check event-based usage limits.
  * @param {import('@prisma/client').MeterMetric} metric - The usage metric to check (e.g., MeterMetric.JOB).
  */
-export const checkEventUsageLimits = (metric) => {
+export const checkEventUsageLimits = (metric, count) => {
   return async (req, res, next) => {
     try {
       if (!req.user || !req.user.tenantId) {
@@ -217,7 +217,7 @@ export const checkEventUsageLimits = (metric) => {
       }
       const { tenantId } = req.user;
 
-      const result = await checkAndRecordUsage(tenantId, metric, 1);
+      const result = await checkAndRecordUsage(tenantId, metric, count);
 
       if (!result.allowed) {
         return res.status(result.status || 429).json({ error: result.reason });
@@ -271,7 +271,7 @@ export const checkSeatAvailability = async (req, res, next) => {
     const seatLimit = seatComponent.includedQty;
     //If seatLimit is -1, it means unlimited seats.
     if (seatLimit === -1) {
-     return next(); // Allow the request to proceed without checking the limit.
+      return next(); // Allow the request to proceed without checking the limit.
     }
     const currentUserCount = await prisma.user.count({
       where: { tenantId: tenantId, deletedAt: null },
@@ -291,4 +291,3 @@ export const checkSeatAvailability = async (req, res, next) => {
     });
   }
 };
-

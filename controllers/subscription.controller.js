@@ -424,7 +424,13 @@ export async function getSubscriptionName(req, res) {
 
     // Delegate to service
     const result = await getSubscriptionNameService({ tenantId });
-    // Always return 200, even if not successful
+
+    if (!result.success) {
+      return res
+        .status(404)
+        .json({ error: result.error || "Subscription not found" });
+    }
+
     return res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
