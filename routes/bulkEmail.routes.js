@@ -16,7 +16,12 @@ router.post(
   "/bulk-send",
   verifyToken(),
   authorize("manage_emails"),
-  checkEventUsageLimits(MeterMetric.EMAILS),
+  (req, res, next) =>
+    checkEventUsageLimits(MeterMetric.EMAILS, req.body.leadIds.length)(
+      req,
+      res,
+      next
+    ),
   createBulkEmailJob
 );
 router.get(

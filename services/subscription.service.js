@@ -274,7 +274,11 @@ export async function getSubscriptionNameService({ tenantId }) {
     });
     // console.log("getSubscriptionNameService sub:", sub);
     if (!sub) {
-      return { success: false, data: null };
+      return {
+        success: false,
+        error: "No active subscription found",
+        data: null,
+      };
     }
 
     // Fetch planVersion
@@ -282,16 +286,15 @@ export async function getSubscriptionNameService({ tenantId }) {
       where: { id: sub.planVersionId },
     });
     if (!planVersion) {
-      return { success: false, data: null };
+      return { success: false, error: "Plan version not found", data: null };
     }
 
-    // console.log("getSubscriptionNameService planVersion:", planVersion);
     // Fetch plan
     const plan = await prisma.plan.findUnique({
       where: { id: planVersion.planId },
     });
     if (!plan) {
-      return { success: false, data: null };
+      return { success: false, error: "Plan not found", data: null };
     }
 
     // Get plan code
