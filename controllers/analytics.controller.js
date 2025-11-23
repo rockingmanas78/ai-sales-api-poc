@@ -8,6 +8,10 @@ import {
   getCampaignStats,
 } from "../services/analytics.service.js";
 import flatten from "../utils/flatten.js";
+import {
+  computeTenantSpamRate,
+  computeTenantReputation,
+} from "../services/reputation.service.js";
 import { PrismaClient, MeterMetric } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -154,7 +158,28 @@ export const getHealthDeliverability = async (req, res) => {
 
     const healthData = { deliverabilityRate, openRate, bounceRate };
 
-    res.status(200).json({ success: true, healthData });
+    // Compute spam/complaint rate and classification
+    let spamInfo = null;
+    try {
+      spamInfo = await computeTenantSpamRate(tenantId);
+    } catch (e) {
+      console.error("Error computing spam rate:", e);
+    }
+
+    // Compute reputation summary (score, status, subscores)
+    let reputationInfo = null;
+    try {
+      reputationInfo = await computeTenantReputation(tenantId);
+    } catch (e) {
+      console.error("Error computing reputation:", e);
+    }
+
+    res.status(200).json({
+      success: true,
+      healthData,
+      spam: spamInfo,
+      reputation: reputationInfo,
+    });
   } catch (error) {
     console.error("Error in getHealthDeliverability:", error);
     res.status(500).json({ error: "Internal Server Error" });

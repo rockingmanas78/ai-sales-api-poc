@@ -642,11 +642,20 @@ model EmailEvent {
   snsMessageId      String       @unique
   payload           Json         @default("{}")
   createdAt         DateTime     @default(now()) @db.Timestamptz(6)
+  bounceType        String?
+  bounceSubType     String?
+  complaintType     String?
+  recipient         String?
+  recipientDomain   String?
   EmailMessage      EmailMessage @relation(fields: [emailMessageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([emailMessageId], map: "idx_emailevent_emailmessage")
   @@index([providerMessageId], map: "idx_emailevent_provider")
   @@index([tenantId, eventType], map: "idx_emailevent_tenant_eventtype")
+  @@index([bounceType], map: "idx_emailevent_bounce_type")
+  @@index([complaintType], map: "idx_emailevent_complaint_type")
+  @@index([recipientDomain], map: "idx_emailevent_recipient_domain")
+  @@index([tenantId, occurredAt], map: "idx_emailevent_tenant_time")
 }
 
 model CalendarConnection {
