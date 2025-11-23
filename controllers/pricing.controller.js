@@ -22,7 +22,11 @@ export const getPricing = async (req, res) => {
           },
           take: 1,
           include: {
-            components: true,
+            components: {
+              orderBy: {
+                metric: "asc",
+              },
+            },
           },
         },
       },
