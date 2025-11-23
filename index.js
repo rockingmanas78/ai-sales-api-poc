@@ -33,6 +33,7 @@ import eventsRouter from "./routes/events.route.js";
 import emailRouter from "./routes/email.route.js";
 import webhookRouter from "./routes/webhooks.route.js";
 import csvRouter from "./routes/csvImport.route.js";
+import reputationRouter from "./routes/reputation.route.js";
 
 import { startBulkEmailWorker, startCsvJobWorker } from "./jobs/jobWorkers.js";
 
@@ -76,7 +77,7 @@ app.use(
       "Pragma",
       "Expires",
       "idempotency-key",
-      "x-ingest-key"
+      "x-ingest-key",
     ],
     credentials: true,
   })
@@ -111,6 +112,7 @@ app.use("/api/events", eventsRouter);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/email", emailRouter);
 app.use("/api/csv", csvRouter);
+app.use("/api/reputation", reputationRouter);
 
 // Global error handler
 app.use((err, req, res, next) => {
