@@ -1452,6 +1452,7 @@ export const createCsvImportJobService = async ({
   dedupePolicy,
   delimiter,
   headerRow,
+  fileName,
 }) => {
   console.log(
     `[createCsvImportJobService] === START === Tenant: ${tenantId}, ObjectKey: ${objectKey}`
@@ -1468,6 +1469,7 @@ export const createCsvImportJobService = async ({
         delimiter,
         headerRow,
         status: "QUEUED",
+        name: fileName,
       },
     });
     console.log(`[createCsvImportJobService] Job created: ${job.id}`);
@@ -1594,6 +1596,7 @@ export const listCsvImportJobsService = async ({
         createdAt: job.createdAt,
         startedAt: job.startedAt,
         completedAt: job.completedAt,
+        name: job.name,
       })),
       nextCursor,
     };
@@ -2381,7 +2384,7 @@ const processRow = async (row, job, dedupePolicy, importMode) => {
               source: lead_source.CSV_UPLOAD,
               linkedInUrl: mappedFields.linkedInUrl,
               companySize: mappedFields.companySize,
-              // jobId: job.id,
+              jobId: job.id,
             },
           });
 
@@ -2430,23 +2433,23 @@ const processRow = async (row, job, dedupePolicy, importMode) => {
           `[processRow] UPSERT: Updating existing lead (ID: ${existingLead.id})`
         );
         try {
-          await prisma.lead.update({
-            where: { id: existingLead.id },
-            data: {
-              companyName: mappedFields.companyName,
-              contactName: mappedFields.contactName,
-              contactEmail: contactEmailArray,
-              contactPhone: phone ? [phone] : [],
-              linkedInUrl: mappedFields.linkedInUrl,
-              companySize: mappedFields.companySize,
-              jobId: job.id,
-            },
-          });
+          // await prisma.lead.update({
+          //   where: { id: existingLead.id },
+          //   data: {
+          //     companyName: mappedFields.companyName,
+          //     contactName: mappedFields.contactName,
+          //     contactEmail: contactEmailArray,
+          //     contactPhone: phone ? [phone] : [],
+          //     linkedInUrl: mappedFields.linkedInUrl,
+          //     companySize: mappedFields.companySize,
+          //     csvJobId: job.id,
+          //   },
+          // });
 
           await prisma.csvImportRow.update({
             where: { id: row.id },
             data: {
-              status: "PROCESSED",
+              status: "DUPLICATE",
               createdLeadId: existingLead.id,
               processedAt: new Date(),
             },
@@ -2455,7 +2458,7 @@ const processRow = async (row, job, dedupePolicy, importMode) => {
           console.log(
             `[processRow] UPSERT: Updated lead (ID: ${existingLead.id})`
           );
-          return { status: "PROCESSED" };
+          return { status: "DUPLICATE" };
         } catch (updateError) {
           // Handle unique constraint (P2002) as a logical duplicate rather than crashing
           if (updateError && updateError.code === "P2002") {
@@ -2495,7 +2498,7 @@ const processRow = async (row, job, dedupePolicy, importMode) => {
               source: lead_source.CSV_UPLOAD,
               linkedInUrl: mappedFields.linkedInUrl,
               companySize: mappedFields.companySize,
-              // jobId: job.id,
+              csvJobId: job.id,
             },
           });
 

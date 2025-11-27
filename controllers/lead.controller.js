@@ -4,7 +4,7 @@ import { parseCSVToJson } from "../services/csv.service.js";
 import { bulkUploadLeads } from "../services/leadUpload.service.js";
 
 // Make sure to import the new service function
-import { processBulkLeadCsvWithTransaction } from '../services/bulkLeadService.js';
+import { processBulkLeadCsvWithTransaction } from "../services/bulkLeadService.js";
 
 const prisma = new PrismaClient();
 
@@ -96,7 +96,7 @@ export const getLeadsByJobId = async (req, res) => {
       return res.status(400).json({ error: "Job ID is required." });
     }
 
-    const job = await prisma.leadGenerationJob.findUnique({
+    let job = await prisma.leadGenerationJob.findUnique({
       // Use findUnique to get a single job
       where: {
         id: jobId,
@@ -105,6 +105,17 @@ export const getLeadsByJobId = async (req, res) => {
         Lead: true, // <-- Corrected: 'Lead' instead of 'leads'
       },
     });
+
+    if (!job) {
+      job = await prisma.csvImportJob.findUnique({
+        where: {
+          id: jobId,
+        },
+        include: {
+          Lead: true,
+        },
+      });
+    }
 
     if (!job) {
       return res.status(404).json({ error: "Job not found." });
@@ -396,35 +407,31 @@ export const bulkUpdateLeadStatus = async (req, res) => {
   }
 };
 
-
-
 export const bulkUploadLeadsFromUrl = async (req, res) => {
-    const { fileUrl } = req.body;
-    const { tenantId } = req.user; // Assuming tenantId is attached by verifyToken middleware
+  const { fileUrl } = req.body;
+  const { tenantId } = req.user; // Assuming tenantId is attached by verifyToken middleware
 
-    if (!fileUrl) {
-        return res.status(400).json({ error: 'fileUrl is required.' });
-    }
+  if (!fileUrl) {
+    return res.status(400).json({ error: "fileUrl is required." });
+  }
 
-    if (!tenantId) {
-        return res.status(400).json({ error: 'Could not identify tenant.' });
-    }
+  if (!tenantId) {
+    return res.status(400).json({ error: "Could not identify tenant." });
+  }
 
-    try {
-        const result = await processBulkLeadCsvWithTransaction(fileUrl, tenantId);
-        res.status(200).json({
-            success: true,
-            message: 'CSV processed successfully.',
-            data: result,
-        });
-    } catch (error) {
-        console.error('Bulk upload transaction failed:', error.message);
-        res.status(500).json({ 
-            success: false,
-            error: 'Bulk upload failed. The entire transaction was rolled back.', 
-            details: error.message 
-        });
-    }
+  try {
+    const result = await processBulkLeadCsvWithTransaction(fileUrl, tenantId);
+    res.status(200).json({
+      success: true,
+      message: "CSV processed successfully.",
+      data: result,
+    });
+  } catch (error) {
+    console.error("Bulk upload transaction failed:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Bulk upload failed. The entire transaction was rolled back.",
+      details: error.message,
+    });
+  }
 };
-
-

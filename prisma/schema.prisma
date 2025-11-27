@@ -181,9 +181,11 @@ model Lead {
   companySize       Int?               @default(0)
   jobId             String?
   description       String?
+  csvJobId          String?            @db.Uuid
   bulkEmailJobLeads BulkEmailJobLead[]
   campaignLeads     CampaignLead[]
   EmailMessage      EmailMessage[]
+  CsvImportJob      CsvImportJob?      @relation(fields: [csvJobId], references: [id], onUpdate: NoAction)
   LeadGenerationJob LeadGenerationJob? @relation(fields: [jobId], references: [id])
   tenant            Tenant             @relation(fields: [tenantId], references: [id])
 
@@ -741,6 +743,7 @@ model CsvImportJob {
   completedAt   DateTime?      @db.Timestamptz(6)
   name          String?
   CsvImportRow  CsvImportRow[]
+  Lead          Lead[]
 
   @@index([tenantId, status], map: "idx_CsvImportJob_tenantId_status")
 }

@@ -22,7 +22,11 @@ const s3 = new S3Client({
   },
 });
 
-console.log(process.env.AWS_REGION, process.env.AWS_PROD_ACCESS_KEY, process.env.AWS_PROD_SECRET_KEY);
+console.log(
+  process.env.AWS_REGION,
+  process.env.AWS_PROD_ACCESS_KEY,
+  process.env.AWS_PROD_SECRET_KEY
+);
 
 // const BUCKET = process.env.S3_BUCKET || "sale-funnel-knowledge-documents";
 const BUCKET = process.env.S3_BUCKET_CSV || "csv-bulk-leads";
@@ -50,7 +54,7 @@ export const uploadCSVDocument = async (req, res) => {
       return res.status(400).json({ error: "Only CSV files are allowed" });
     }
 
-    console.log("started")
+    console.log("started");
 
     // 2️⃣ Upload to S3
     const file = req.file;
@@ -65,7 +69,7 @@ export const uploadCSVDocument = async (req, res) => {
     };
 
     console.log("Uploading to S3:", uploadParams);
-    
+
     await s3.send(new PutObjectCommand(uploadParams));
     console.log("Uploaded to S3:", uploadParams);
 
@@ -84,7 +88,6 @@ export const uploadCSVDocument = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
 
 /**
  * Configure a CSV Import Job.
@@ -190,6 +193,7 @@ export const createCsvImportJob = async (req, res) => {
     dedupePolicy = "EMAIL",
     delimiter,
     headerRow = 1,
+    fileName,
   } = req.body;
 
   // console.log(req.body);
@@ -198,7 +202,6 @@ export const createCsvImportJob = async (req, res) => {
       error: "tenantId, objectKey, and columnMapping are required",
     });
   }
-
 
   try {
     const result = await createCsvImportJobService({
@@ -209,6 +212,7 @@ export const createCsvImportJob = async (req, res) => {
       dedupePolicy,
       delimiter,
       headerRow,
+      fileName,
     });
     res.status(201).json(result);
   } catch (error) {
