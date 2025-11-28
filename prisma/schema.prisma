@@ -484,7 +484,7 @@ model TenantRAG {
 model WaitListMembers {
   id              String   @id(map: "wait_list_members_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name            String
-  email           String   @unique(map: "wait_list_members_email_key")
+  email           String   @unique
   whatsapp_number String
   created_at      DateTime @default(now()) @db.Timestamptz(6)
 }
