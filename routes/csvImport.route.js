@@ -34,7 +34,4 @@ router.get("/:jobId", getCsvImportJobStatus);
 // List all CSV Import Jobs
 router.get("/", listCsvImportJobs);
 
-// Get the status of a specific CSV Import Job
-router.get("/csv/:jobId", getCsvImportJobStatus);
-
 export default router;
