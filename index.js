@@ -42,6 +42,8 @@ import warmWebhook from "./routes/warmup.webhook.routes.js";
 import warmupMessage from "./routes/warmup.message.routes.js"
 import  warmupThread  from "./routes/warmup.thread.routes.js";
 import warmupMessageEvent from "./routes/warmup.messageEvent.routes.js";
+import emailVerificationRouter from "./routes/emailVerification.route.js";
+
 import { startBulkEmailWorker, startCsvJobWorker } from "./jobs/jobWorkers.js";
 
 const app = express();
@@ -128,6 +130,7 @@ app.use("/api/warmup/webhook",warmWebhook);
 app.use("/api/warmup/message",warmupMessage);
 app.use("/api/warmup/thread",warmupThread);
 app.use("/api/warmup/event",warmupMessageEvent);
+app.use("/api/email-verification", emailVerificationRouter);
 
 // Global error handler
 app.use((err, req, res, next) => {
