@@ -35,6 +35,7 @@ import webhookRouter from "./routes/webhooks.route.js";
 import csvRouter from "./routes/csvImport.route.js";
 import reputationRouter from "./routes/reputation.route.js";
 import emailVerificationRouter from "./routes/emailVerification.route.js";
+import calendarRouter from "./routes/calender.route.js";
 
 import { startBulkEmailWorker, startCsvJobWorker } from "./jobs/jobWorkers.js";
 
@@ -115,6 +116,7 @@ app.use("/api/email", emailRouter);
 app.use("/api/csv", csvRouter);
 app.use("/api/reputation", reputationRouter);
 app.use("/api/email-verification", emailVerificationRouter);
+app.use("/api/calendar", calendarRouter);
 
 // Global error handler
 app.use((err, req, res, next) => {
