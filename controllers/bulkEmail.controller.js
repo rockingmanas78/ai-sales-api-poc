@@ -239,7 +239,7 @@ export async function processNextBatch() {
       status: { in: ["QUEUED", "PROCESSING"] },
       nextProcessTime: { lte: now },
     },
-    include: { template: true },
+    include: { EmailTemplate: true },
   });
 
   if (!dueJobs.length) {
