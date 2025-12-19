@@ -35,7 +35,13 @@ import webhookRouter from "./routes/webhooks.route.js";
 import csvRouter from "./routes/csvImport.route.js";
 import reputationRouter from "./routes/reputation.route.js";
 import emailVerificationRouter from "./routes/emailVerification.route.js";
-
+import warmupProfile from "./routes/warmup.profile.routes.js";
+import warmupInbox from "./routes/warmup.inbox.routes.js";
+import warmupScheduler from "./routes/warmup.scheduler.routes.js";
+import warmWebhook from "./routes/warmup.webhook.routes.js";
+import warmupMessage from "./routes/warmup.message.routes.js"
+import  warmupThread  from "./routes/warmup.thread.routes.js";
+import warmupMessageEvent from "./routes/warmup.messageEvent.routes.js";
 import { startBulkEmailWorker, startCsvJobWorker } from "./jobs/jobWorkers.js";
 
 const app = express();
@@ -115,6 +121,13 @@ app.use("/api/email", emailRouter);
 app.use("/api/csv", csvRouter);
 app.use("/api/reputation", reputationRouter);
 app.use("/api/email-verification", emailVerificationRouter);
+app.use("/api/warmup/profile",warmupProfile)
+app.use("/api/warmup/inbox",warmupInbox);
+app.use("/api/warmup/scheduler",warmupScheduler);
+app.use("/api/warmup/webhook",warmWebhook);
+app.use("/api/warmup/message",warmupMessage);
+app.use("/api/warmup/thread",warmupThread);
+app.use("/api/warmup/event",warmupMessageEvent);
 
 // Global error handler
 app.use((err, req, res, next) => {

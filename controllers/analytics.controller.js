@@ -12,7 +12,7 @@ import {
   computeTenantSpamRate,
   computeTenantReputation,
 } from "../services/reputation.service.js";
-import { PrismaClient, MeterMetric } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
