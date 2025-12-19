@@ -8,344 +8,104 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model Plan {
-  id       String        @id @default(uuid())
-  code     String        @unique
-  name     String
-  versions PlanVersion[]
-}
+model AppEvent {
+  event_id      String   @id(map: "app_event_pkey") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  occurred_at   DateTime @db.Timestamptz(6)
+  received_at   DateTime @default(now()) @db.Timestamptz(6)
+  event_name    String
+  user_id       String?
+  anonymous_id  String?
+  session_id    String?
+  tenant_id     String?
+  source        String?
+  page_url      String?
+  referrer      String?
+  ip            String?  @db.Inet
+  user_agent    String?
+  properties    Json     @default("{}")
+  context       Json     @default("{}")
+  event_version Int      @default(1) @db.SmallInt
+  schema_key    String?
+  event_type    String   @default("UI")
 
-model PlanVersion {
-  id             String         @id @default(dbgenerated("gen_random_uuid()"))
-  planId         String
-  version        Int
-  zone           ZoneCode
-  bucket         Experiment
-  cadence        BillingCadence
-  currency       String
-  basePriceCents Int
-  createdAt      DateTime       @default(now())
-  components     Component[]
-  Plan           Plan           @relation(fields: [planId], references: [id])
-  prices         PriceId[]
-
-  @@unique([planId, zone, bucket, cadence, version])
-}
-
-model Component {
-  id            String      @id @default(dbgenerated("gen_random_uuid()"))
-  planVersionId String
-  metric        MeterMetric
-  includedQty   Int
-  capPeriod     CapPeriod
-  overageCents  Int
-  PlanVersion   PlanVersion @relation(fields: [planVersionId], references: [id])
-}
-
-model PriceId {
-  id              String         @id @default(dbgenerated("(gen_random_uuid())::text"))
-  planVersionId   String
-  gateway         PaymentGateway
-  price           Int?
-  externalPriceId String
-  gatewayPlanId   String?
-  PlanVersion     PlanVersion    @relation(fields: [planVersionId], references: [id])
-
-  @@unique([planVersionId, gateway])
-}
-
-model Tenant {
-  id                 String               @id @default(uuid())
-  name               String
-  plan               PlanType             @default(FREE)
-  createdAt          DateTime             @default(now())
-  countryCode        String?
-  zone               ZoneCode             @default(IN)
-  deletedAt          DateTime?
-  bulkEmailJobs      BulkEmailJob[]
-  BulkSnippet        BulkSnippet[]
-  CalendarConnection CalendarConnection[]
-  CompanyProfile     CompanyProfile?
-  Conversation       Conversation[]
-  DomainIdentity     DomainIdentity[]
-  campaigns          EmailCampaign[]
-  EmailMessage       EmailMessage[]
-  templates          EmailTemplate[]
-  Feedback           Feedback[]
-  InboundReceipt     InboundReceipt[]
-  KnowledgeDocument  KnowledgeDocument[]
-  leads              Lead[]
-  jobs               LeadGenerationJob[]
-  PaymentTransaction PaymentTransaction[]
-  RagReadiness       RagReadiness?
-  TenantOnboarding   TenantOnboarding?
-  UsageCounter       UsageCounter[]
-  UsageEvent         UsageEvent[]
-  users              User[]
-  WebsiteContent     WebsiteContent[]
-}
-
-model Subscription {
-  id                 String               @id @default(uuid())
-  tenantId           String
-  planVersionId      String
-  zone               ZoneCode
-  status             String
-  currentStart       DateTime
-  currentEnd         DateTime
-  brokerId           String?
-  planPriceId        String?
-  cycle              String?              @default("MONTHLY")
-  nextBillingAt      DateTime?            @db.Timestamptz(6)
-  provider           String?
-  providerSubId      String?
-  createdAt          DateTime             @default(now()) @db.Timestamptz(6)
-  updatedAt          DateTime             @default(now()) @db.Timestamptz(6)
-  providerCustId     String?
-  cancelAtCycleEnd   Boolean?
-  PaymentTransaction PaymentTransaction[]
-  UsageCounter       UsageCounter[]
-  UsageEvent         UsageEvent[]
-}
-
-model UsageEvent {
-  id             BigInt        @id @default(autoincrement())
-  tenantId       String
-  metric         MeterMetric
-  qty            Int
-  recordedAt     DateTime      @default(now())
-  subscriptionId String?
-  idempotencyKey String?
-  Subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onUpdate: NoAction, map: "UsageEvent_subscription_fkey")
-  Tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "UsageEvent_tenant_fkey")
-
-  @@index([tenantId, recordedAt])
-  @@index([tenantId, recordedAt], map: "UsageEvent_tenant_recordedAt_idx")
-}
-
-model DailyCapCounter {
-  tenantId String
-  date     DateTime
-  metric   MeterMetric
-  qty      Int
-
-  @@id([tenantId, date, metric])
-}
-
-model CampaignLead {
-  id         String        @id @default(uuid())
-  campaignId String
-  leadId     String
-  createdAt  DateTime      @default(now())
-  campaign   EmailCampaign @relation(fields: [campaignId], references: [id])
-  lead       Lead          @relation(fields: [leadId], references: [id])
-
-  @@unique([campaignId, leadId])
-}
-
-model User {
-  id                 String               @id @default(uuid())
-  tenantId           String
-  email              String               @unique
-  passwordHash       String
-  role               UserRole             @default(MANAGER)
-  verified           Boolean              @default(false)
-  createdAt          DateTime             @default(now())
-  deletedAt          DateTime?
-  oauthProvider      String?              @db.VarChar(32)
-  oauthId            String?
-  name               String?              @db.VarChar(120)
-  phoneNumber        String?              @db.VarChar(32)
-  location           String?              @db.VarChar(120)
-  bio                String?
-  avatarUrl          String?
-  CalendarConnection CalendarConnection[]
-  tenant             Tenant               @relation(fields: [tenantId], references: [id])
-}
-
-model Lead {
-  id                String             @id @default(uuid())
-  tenantId          String
-  companyName       String
-  contactEmail      String[]
-  contactName       String?
-  contactPhone      String[]
-  status            LeadStatus         @default(FOLLOW_UP)
-  confidence        Float?
-  metadata          Json?
-  createdAt         DateTime           @default(now())
-  deletedAt         DateTime?
-  contactAddress    String[]
-  source            lead_source        @default(AI_GENERATED)
-  linkedInUrl       String?            @unique
-  companySize       Int?               @default(0)
-  jobId             String?
-  description       String?
-  csvJobId          String?            @db.Uuid
-  bulkEmailJobLeads BulkEmailJobLead[]
-  campaignLeads     CampaignLead[]
-  EmailMessage      EmailMessage[]
-  CsvImportJob      CsvImportJob?      @relation(fields: [csvJobId], references: [id], onUpdate: NoAction)
-  LeadGenerationJob LeadGenerationJob? @relation(fields: [jobId], references: [id])
-  tenant            Tenant             @relation(fields: [tenantId], references: [id])
-
-  @@unique([jobId, contactEmail], map: "Lead_jobId_email_key")
-  @@index([tenantId, status])
-  @@index([jobId])
-}
-
-model DomainIdentity {
-  id                 String          @id @default(uuid())
-  tenantId           String
-  domainName         String          @unique
-  verificationToken  String?
-  verificationStatus String          @default("Pending")
-  dkimTokens         String[]
-  createdAt          DateTime        @default(now())
-  verifiedAt         DateTime?
-  deletedAt          DateTime?
-  dkimRecords        Json            @default("[]")
-  tenant             Tenant          @relation(fields: [tenantId], references: [id])
-  emailIdentities    EmailIdentity[]
-}
-
-model EmailIdentity {
-  id                 String         @id @default(uuid())
-  domainId           String
-  emailAddress       String         @unique
-  verificationStatus String         @default("Pending")
-  createdAt          DateTime       @default(now())
-  verifiedAt         DateTime?
-  deletedAt          DateTime?
-  domain             DomainIdentity @relation(fields: [domainId], references: [id])
-}
-
-model Variable {
-  id           String        @id @default(uuid())
-  key          String
-  defaultValue String?
-  templateId   String
-  template     EmailTemplate @relation(fields: [templateId], references: [id])
-}
-
-model EmailTemplate {
-  id              String          @id @default(uuid())
-  tenantId        String
-  name            String
-  subject         String
-  body            String
-  from            String
-  to              String
-  createdAt       DateTime        @default(now())
-  deletedAt       DateTime?
-  preheader       String?
-  unsubscribe_url String?
-  logo_url        String?
-  brand_colors    Json?
-  font_family     String?
-  show_header     Boolean         @default(true)
-  show_footer     Boolean         @default(true)
-  text_part       String?
-  bulkEmailJobs   BulkEmailJob[]
-  campaigns       EmailCampaign[]
-  tenant          Tenant          @relation(fields: [tenantId], references: [id])
-  variable        Variable[]
-}
-
-model EmailCampaign {
-  id            String         @id @default(uuid())
-  tenantId      String
-  templateId    String
-  scheduledAt   DateTime?
-  createdAt     DateTime       @default(now())
-  status        CampaignStatus @default(DRAFT)
-  name          String
-  description   String?
-  campaign_type CampaignType
-  bulkEmailJobs BulkEmailJob[]
-  campaignLeads CampaignLead[]
-  template      EmailTemplate  @relation(fields: [templateId], references: [id])
-  tenant        Tenant         @relation(fields: [tenantId], references: [id])
-  EmailMessage  EmailMessage[]
+  @@index([event_name, occurred_at(sort: Desc)], map: "idx_app_event_name_time")
+  @@index([occurred_at], map: "idx_app_event_time")
+  @@index([user_id, occurred_at(sort: Desc)], map: "idx_app_event_user_time")
 }
 
 model BulkEmailJob {
-  id              String             @id @default(uuid())
-  tenantId        String
-  templateId      String?
-  campaignId      String?
-  rateLimit       Int
-  status          BulkEmailJobStatus @default(QUEUED)
-  progress        Int                @default(0)
-  total           Int                @default(0)
-  nextProcessTime DateTime?
-  createdAt       DateTime           @default(now())
-  startedAt       DateTime?
-  completedAt     DateTime?
-  lastProcessedAt DateTime?
-  campaign        EmailCampaign?     @relation(fields: [campaignId], references: [id])
-  template        EmailTemplate?     @relation(fields: [templateId], references: [id], onDelete: Restrict)
-  tenant          Tenant             @relation(fields: [tenantId], references: [id])
-  jobLeads        BulkEmailJobLead[]
+  id               String             @id
+  tenantId         String
+  templateId       String?
+  campaignId       String?
+  rateLimit        Int
+  status           BulkEmailJobStatus @default(QUEUED)
+  progress         Int                @default(0)
+  total            Int                @default(0)
+  nextProcessTime  DateTime?
+  createdAt        DateTime           @default(now())
+  startedAt        DateTime?
+  completedAt      DateTime?
+  lastProcessedAt  DateTime?
+  isWarmup         Boolean            @default(false)
+  EmailCampaign    EmailCampaign?     @relation(fields: [campaignId], references: [id])
+  EmailTemplate    EmailTemplate?     @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  Tenant           Tenant             @relation(fields: [tenantId], references: [id])
+  BulkEmailJobLead BulkEmailJobLead[]
 
-  @@index([tenantId, status])
   @@index([status, nextProcessTime])
+  @@index([tenantId, status])
 }
 
 model BulkEmailJobLead {
-  id       String       @id @default(uuid())
-  jobId    String
-  leadId   String
-  status   EmailStatus  @default(QUEUED)
-  attempts Int          @default(0)
-  sentAt   DateTime?
-  job      BulkEmailJob @relation(fields: [jobId], references: [id])
-  lead     Lead         @relation(fields: [leadId], references: [id])
+  id           String       @id
+  jobId        String
+  leadId       String
+  status       EmailStatus  @default(QUEUED)
+  attempts     Int          @default(0)
+  sentAt       DateTime?
+  BulkEmailJob BulkEmailJob @relation(fields: [jobId], references: [id])
+  Lead         Lead         @relation(fields: [leadId], references: [id])
 
   @@unique([jobId, leadId])
 }
 
-model LeadGenerationJob {
-  id             String    @id @default(uuid())
-  tenantId       String
-  prompt         String?
-  industry       String?
-  location       String?
-  status         String    @default("QUEUED")
-  batchId        String?
-  createdAt      DateTime  @default(now())
-  completedAt    DateTime?
-  totalRequested Int
-  generatedCount Int       @default(0)
-  urls           String[]  @default([])
-  Lead           Lead[]
-  tenant         Tenant    @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId, status])
-}
-
-model PaymentTransaction {
-  id             String       @id @default(dbgenerated("(gen_random_uuid())::text"))
-  tenantId       String
-  subscriptionId String
-  providerId     String       @unique(map: "paymenttransaction_providerid_unique")
-  amount         Int
-  status         String       @default("INITIATED")
-  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
-  invoiceId      String?
-  invoiceUrl     String?
-  paymentId      String?
-  Subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_paymenttransaction_subscription")
-  Tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_paymenttransaction_tenant")
-}
-
-/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model BulkSnippet {
   id         String   @id(map: "bulk_snippet_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tenant_id  String
   text       String
   created_at DateTime @default(now()) @db.Timestamptz(6)
   Tenant     Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "bulk_snippet_tenant_id_fkey")
+}
+
+model CalendarConnection {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String
+  userId       String
+  provider     CalendarProvider
+  accountEmail String
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?        @db.Timestamptz(6)
+  scope        String?
+  createdAt    DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime         @default(now()) @db.Timestamptz(6)
+  Tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "CalendarConnection_tenant_fkey")
+  User         User             @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "CalendarConnection_user_fkey")
+
+  @@unique([tenantId, userId, provider], map: "CalendarConnection_tenant_user_provider_uq")
+  @@index([tenantId], map: "CalendarConnection_tenant_idx")
+}
+
+model CampaignLead {
+  id            String        @id
+  campaignId    String
+  leadId        String
+  createdAt     DateTime      @default(now())
+  EmailCampaign EmailCampaign @relation(fields: [campaignId], references: [id])
+  Lead          Lead          @relation(fields: [leadId], references: [id])
+
+  @@unique([campaignId, leadId])
 }
 
 model CompanyProfile {
@@ -377,126 +137,14 @@ model CompanyQA {
   @@index([company_id, category], map: "idx_company_qa_company_category")
 }
 
-model KnowledgeDocument {
-  id             String    @id(map: "knowledge_document_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenant_id      String
-  file_key       String
-  filename       String
-  mime_type      String
-  size_bytes     Int?
-  status         String    @default("UPLOADED")
-  extracted_text String?
-  created_at     DateTime  @default(now()) @db.Timestamptz(6)
-  processed_at   DateTime? @db.Timestamptz(6)
-  Tenant         Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "knowledge_document_tenant_id_fkey")
-
-  @@index([tenant_id, status], map: "idx_knowledge_document_status")
-}
-
-model Product {
-  id              String         @id(map: "product_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  company_id      String         @db.Uuid
-  name            String         @db.VarChar(120)
-  category        String?
-  description     String?
-  features        String?
-  benefits        String?
-  pricing         String?
-  target_audience String?
-  use_cases       String?
-  created_at      DateTime       @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime       @default(now()) @db.Timestamptz(6)
-  CompanyProfile  CompanyProfile @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "product_company_id_fkey")
-  ProductQA       ProductQA[]
-}
-
-model ProductQA {
-  id         String  @id(map: "product_qa_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  product_id String  @db.Uuid
-  question   String
-  answer     String
-  Product    Product @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "product_qa_product_id_fkey")
-}
-
-model WebsiteContent {
-  id            String    @id(map: "website_content_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenant_id     String
-  url           String
-  title         String?
-  status        String    @default("PENDING")
-  crawl_summary String?
-  added_at      DateTime  @default(now()) @db.Timestamptz(6)
-  finished_at   DateTime? @db.Timestamptz(6)
-  Tenant        Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "website_content_tenant_id_fkey")
-
-  @@index([tenant_id, status], map: "idx_website_content_status")
-}
-
-/// This model contains low level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model Feedback {
-  id         String           @id @default(dbgenerated("(gen_random_uuid())::text"))
-  tenant_id  String
-  name       String
-  email      String?
-  category   FeedbackCategory @default(GENERAL_COMMENT)
-  rating     Int?
-  page       String?
-  message    String
-  created_at DateTime         @default(now()) @db.Timestamptz(6)
-  Tenant     Tenant           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_feedback_tenant")
-
-  @@index([tenant_id, category], map: "idx_feedback_tenant_category")
-  @@index([tenant_id, created_at], map: "idx_feedback_tenant_created_at")
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model TenantOnboarding {
-  tenant_id     String             @id
-  role          OnboardingRole
-  hear_about_us AcquisitionChannel
-  primary_goal  SalesGoal
-  createdat     DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime           @default(now()) @db.Timestamptz(6)
-  Tenant        Tenant             @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model TenantRAG {
-  id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenant_id       String
-  source          String
-  sourceId        String
-  embedding       Unsupported("vector")?
-  created_at      DateTime               @default(now()) @db.Timestamptz(6)
-  chunk_hash      String?
-  version         Int?                   @default(1)
-  is_active       Boolean?               @default(true)
-  updated_at      DateTime?              @default(now()) @db.Timestamptz(6)
-  embedding_model String?
-  simhash_bigint  BigInt?
-
-  @@unique([tenant_id, chunk_hash], map: "tenantrag_tenant_hash_uq")
-  @@index([tenant_id], map: "idx_tenant_rag_tenant_id")
-  @@index([tenant_id, is_active, updated_at(sort: Desc)], map: "tenantrag_active_updated_idx")
-  @@index([tenant_id, source], map: "tenantrag_source_idx")
-}
-
-model WaitListMembers {
-  id              String   @id(map: "wait_list_members_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name            String
-  email           String   @unique
-  whatsapp_number String
-  created_at      DateTime @default(now()) @db.Timestamptz(6)
-}
-
-model GeneratedEmail {
-  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  subject        String
-  content        String
-  createdAt      DateTime      @default(now()) @db.Timestamp(6)
-  scheduledDate  DateTime?     @db.Timestamp(6)
-  emailMessageId String?       @db.Uuid
-  EmailMessage   EmailMessage? @relation(fields: [emailMessageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+model Component {
+  id            String      @id @default(dbgenerated("gen_random_uuid()"))
+  planVersionId String
+  metric        MeterMetric
+  includedQty   Int
+  capPeriod     CapPeriod
+  overageCents  Int
+  PlanVersion   PlanVersion @relation(fields: [planVersionId], references: [id])
 }
 
 model Conversation {
@@ -514,214 +162,6 @@ model Conversation {
 
   @@unique([tenantId, threadKey], map: "conversation_tenant_threadkey_uq")
   @@index([tenantId, lastMessageAt], map: "conversation_tenant_lastMessageAt_idx")
-}
-
-model EmailMessage {
-  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId           String
-  conversationId     String           @db.Uuid
-  direction          email_direction
-  provider           String           @default("AWS_SES")
-  providerMessageId  String
-  subject            String?
-  from               String[]         @default([])
-  to                 String[]         @default([])
-  cc                 String[]         @default([])
-  bcc                String[]         @default([])
-  text               String?
-  html               String?
-  headers            Json?
-  verdicts           Json?
-  inReplyTo          String?
-  referencesIds      String[]
-  plusToken          String?
-  s3Bucket           String?
-  s3Key              String?
-  receivedAt         DateTime?        @db.Timestamptz(6)
-  sentAt             DateTime?        @db.Timestamptz(6)
-  createdAt          DateTime         @default(now()) @db.Timestamptz(6)
-  campaignId         String?
-  leadId             String?
-  lastDeliveryStatus String?
-  firstOpenedAt      DateTime?        @db.Timestamptz(6)
-  opensCount         Int?             @default(0)
-  clicksCount        Int?             @default(0)
-  lastEventAt        DateTime?        @db.Timestamptz(6)
-  EmailEvent         EmailEvent[]
-  EmailCampaign      EmailCampaign?   @relation(fields: [campaignId], references: [id], onUpdate: NoAction, map: "emailmessage_campaign_fkey")
-  Conversation       Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "emailmessage_conversation_fkey")
-  Lead               Lead?            @relation(fields: [leadId], references: [id], onUpdate: NoAction, map: "emailmessage_lead_fkey")
-  Tenant             Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "emailmessage_tenant_fkey")
-  GeneratedEmail     GeneratedEmail[]
-
-  @@unique([tenantId, providerMessageId], map: "emailmessage_tenant_providerMessageId_uq")
-  @@index([tenantId, conversationId, createdAt], map: "emailmessage_tenant_conv_createdAt_idx")
-  @@index([tenantId, inReplyTo], map: "emailmessage_tenant_inReplyTo_idx")
-}
-
-model InboundReceipt {
-  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId          String
-  snsMessageId      String    @unique
-  providerMessageId String
-  s3Bucket          String
-  s3Key             String
-  status            String
-  error             String?
-  receivedAt        DateTime  @default(now()) @db.Timestamptz(6)
-  processedAt       DateTime? @db.Timestamptz(6)
-  Tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "inboundreceipt_tenant_fkey")
-
-  @@index([tenantId, receivedAt], map: "inboundreceipt_tenant_receivedAt_idx")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model UsageCounter {
-  tenantId       String
-  subscriptionId String
-  metric         MeterMetric
-  windowType     CapPeriod
-  windowStart    DateTime     @db.Timestamptz(6)
-  windowEnd      DateTime?    @db.Timestamptz(6)
-  qty            Int          @default(0)
-  updatedAt      DateTime     @default(now()) @db.Timestamptz(6)
-  Subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "UsageCounter_subscription_fkey")
-  Tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "UsageCounter_tenant_fkey")
-
-  @@id([tenantId, subscriptionId, metric, windowType, windowStart])
-  @@index([tenantId, metric, windowType, windowStart], map: "UsageCounter_lookup_idx")
-}
-
-model AppEvent {
-  event_id      String   @id(map: "app_event_pkey") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  occurred_at   DateTime @db.Timestamptz(6)
-  received_at   DateTime @default(now()) @db.Timestamptz(6)
-  event_name    String
-  user_id       String?
-  anonymous_id  String?
-  session_id    String?
-  tenant_id     String?
-  source        String?
-  page_url      String?
-  referrer      String?
-  ip            String?  @db.Inet
-  user_agent    String?
-  properties    Json     @default("{}")
-  context       Json     @default("{}")
-  event_version Int      @default(1) @db.SmallInt
-  schema_key    String?
-  event_type    String   @default("UI")
-
-  @@index([event_name, occurred_at(sort: Desc)], map: "idx_app_event_name_time")
-  @@index([occurred_at], map: "idx_app_event_time")
-  @@index([user_id, occurred_at(sort: Desc)], map: "idx_app_event_user_time")
-}
-
-model identity_link {
-  anonymous_id String
-  user_id      String
-  linked_at    DateTime @default(now()) @db.Timestamptz(6)
-
-  @@id([anonymous_id, user_id])
-}
-
-model WebhookEvent {
-  eventId     String    @id
-  provider    String
-  eventType   String
-  receivedAt  DateTime  @default(now()) @db.Timestamptz(6)
-  processed   Boolean   @default(false)
-  processedAt DateTime? @db.Timestamptz(6)
-}
-
-model EmailEvent {
-  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId          String
-  emailMessageId    String       @db.Uuid
-  providerMessageId String
-  eventType         String
-  occurredAt        DateTime     @db.Timestamptz(6)
-  snsMessageId      String       @unique
-  payload           Json         @default("{}")
-  createdAt         DateTime     @default(now()) @db.Timestamptz(6)
-  bounceType        String?
-  bounceSubType     String?
-  complaintType     String?
-  recipient         String?
-  recipientDomain   String?
-  EmailMessage      EmailMessage @relation(fields: [emailMessageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([emailMessageId], map: "idx_emailevent_emailmessage")
-  @@index([providerMessageId], map: "idx_emailevent_provider")
-  @@index([tenantId, eventType], map: "idx_emailevent_tenant_eventtype")
-  @@index([bounceType], map: "idx_emailevent_bounce_type")
-  @@index([complaintType], map: "idx_emailevent_complaint_type")
-  @@index([recipientDomain], map: "idx_emailevent_recipient_domain")
-  @@index([tenantId, occurredAt], map: "idx_emailevent_tenant_time")
-}
-
-model CalendarConnection {
-  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId     String
-  userId       String
-  provider     CalendarProvider
-  accountEmail String
-  accessToken  String
-  refreshToken String?
-  expiresAt    DateTime?        @db.Timestamptz(6)
-  scope        String?
-  createdAt    DateTime         @default(now()) @db.Timestamptz(6)
-  updatedAt    DateTime         @default(now()) @db.Timestamptz(6)
-  Tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "CalendarConnection_tenant_fkey")
-  User         User             @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "CalendarConnection_user_fkey")
-
-  @@unique([tenantId, userId, provider], map: "CalendarConnection_tenant_user_provider_uq")
-  @@index([tenantId], map: "CalendarConnection_tenant_idx")
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model MeetingBooking {
-  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  intentId       String         @db.Uuid
-  finalStart     DateTime       @db.Timestamptz(6)
-  finalEnd       DateTime       @db.Timestamptz(6)
-  calendarSystem CalendarSystem
-  eventId        String?
-  icsUid         String?
-  createdAt      DateTime       @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime       @default(now()) @db.Timestamptz(6)
-  MeetingIntent  MeetingIntent  @relation(fields: [intentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([intentId], map: "MeetingBooking_intent_idx")
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model MeetingIntent {
-  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId       String
-  conversationId String
-  status         MeetingIntentStatus @default(OFFERED)
-  createdAt      DateTime            @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime            @default(now()) @db.Timestamptz(6)
-  MeetingBooking MeetingBooking[]
-  MeetingOffer   MeetingOffer[]
-
-  @@index([tenantId, conversationId], map: "MeetingIntent_tenant_conversation_idx")
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model MeetingOffer {
-  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  intentId      String        @db.Uuid
-  slotStart     DateTime      @db.Timestamptz(6)
-  slotEnd       DateTime      @db.Timestamptz(6)
-  recipientTz   String        @default("UTC")
-  tokenHash     String?
-  expiresAt     DateTime?     @db.Timestamptz(6)
-  createdAt     DateTime      @default(now()) @db.Timestamptz(6)
-  MeetingIntent MeetingIntent @relation(fields: [intentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([intentId, slotStart, slotEnd], map: "MeetingOffer_unique_slot_per_intent")
 }
 
 model CsvImportJob {
@@ -764,6 +204,383 @@ model CsvImportRow {
   @@index([jobId, status], map: "idx_CsvImportRow_jobId_status")
 }
 
+model DailyCapCounter {
+  tenantId String
+  date     DateTime
+  metric   MeterMetric
+  qty      Int
+
+  @@id([tenantId, date, metric])
+}
+
+model DomainIdentity {
+  id                 String          @id
+  tenantId           String
+  domainName         String          @unique
+  verificationToken  String?
+  verificationStatus String          @default("Pending")
+  dkimTokens         String[]
+  createdAt          DateTime        @default(now())
+  verifiedAt         DateTime?
+  deletedAt          DateTime?
+  dkimRecords        Json            @default("[]")
+  Tenant             Tenant          @relation(fields: [tenantId], references: [id])
+  EmailIdentity      EmailIdentity[]
+}
+
+model EmailCampaign {
+  id            String         @id
+  tenantId      String
+  templateId    String
+  scheduledAt   DateTime?
+  createdAt     DateTime       @default(now())
+  status        CampaignStatus @default(DRAFT)
+  name          String
+  description   String?
+  campaign_type CampaignType
+  BulkEmailJob  BulkEmailJob[]
+  CampaignLead  CampaignLead[]
+  EmailTemplate EmailTemplate  @relation(fields: [templateId], references: [id])
+  Tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  EmailMessage  EmailMessage[]
+}
+
+model EmailEvent {
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String
+  emailMessageId    String       @db.Uuid
+  providerMessageId String
+  eventType         String
+  occurredAt        DateTime     @db.Timestamptz(6)
+  snsMessageId      String       @unique
+  payload           Json         @default("{}")
+  createdAt         DateTime     @default(now()) @db.Timestamptz(6)
+  bounceType        String?
+  bounceSubType     String?
+  complaintType     String?
+  recipient         String?
+  recipientDomain   String?
+  EmailMessage      EmailMessage @relation(fields: [emailMessageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([bounceType], map: "idx_emailevent_bounce_type")
+  @@index([complaintType], map: "idx_emailevent_complaint_type")
+  @@index([emailMessageId], map: "idx_emailevent_emailmessage")
+  @@index([providerMessageId], map: "idx_emailevent_provider")
+  @@index([recipientDomain], map: "idx_emailevent_recipient_domain")
+  @@index([tenantId, eventType], map: "idx_emailevent_tenant_eventtype")
+  @@index([tenantId, occurredAt], map: "idx_emailevent_tenant_time")
+}
+
+model EmailIdentity {
+  id                 String              @id
+  domainId           String
+  emailAddress       String              @unique
+  verificationStatus String              @default("Pending")
+  createdAt          DateTime            @default(now())
+  verifiedAt         DateTime?
+  deletedAt          DateTime?
+  DomainIdentity     DomainIdentity      @relation(fields: [domainId], references: [id])
+  EmailWarmupProfile EmailWarmupProfile?
+  WarmupDailyStat    WarmupDailyStat[]
+}
+
+model EmailMessage {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String
+  conversationId     String             @db.Uuid
+  direction          email_direction
+  provider           String             @default("AWS_SES")
+  providerMessageId  String
+  subject            String?
+  from               String[]           @default([])
+  to                 String[]           @default([])
+  cc                 String[]           @default([])
+  bcc                String[]           @default([])
+  text               String?
+  html               String?
+  headers            Json?
+  verdicts           Json?
+  inReplyTo          String?
+  referencesIds      String[]
+  plusToken          String?
+  s3Bucket           String?
+  s3Key              String?
+  receivedAt         DateTime?          @db.Timestamptz(6)
+  sentAt             DateTime?          @db.Timestamptz(6)
+  createdAt          DateTime           @default(now()) @db.Timestamptz(6)
+  campaignId         String?
+  leadId             String?
+  lastDeliveryStatus String?
+  firstOpenedAt      DateTime?          @db.Timestamptz(6)
+  opensCount         Int?               @default(0)
+  clicksCount        Int?               @default(0)
+  lastEventAt        DateTime?          @db.Timestamptz(6)
+  isWarmup           Boolean            @default(false)
+  warmupMarker       String?
+  EmailEvent         EmailEvent[]
+  EmailCampaign      EmailCampaign?     @relation(fields: [campaignId], references: [id], onUpdate: NoAction, map: "emailmessage_campaign_fkey")
+  Conversation       Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "emailmessage_conversation_fkey")
+  Lead               Lead?              @relation(fields: [leadId], references: [id], onUpdate: NoAction, map: "emailmessage_lead_fkey")
+  Tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "emailmessage_tenant_fkey")
+  GeneratedEmail     GeneratedEmail[]
+  WarmupInboxEvent   WarmupInboxEvent[]
+
+  @@unique([tenantId, providerMessageId], map: "emailmessage_tenant_providerMessageId_uq")
+  @@index([tenantId, conversationId, createdAt], map: "emailmessage_tenant_conv_createdAt_idx")
+  @@index([tenantId, inReplyTo], map: "emailmessage_tenant_inReplyTo_idx")
+}
+
+model EmailTemplate {
+  id              String          @id
+  tenantId        String
+  name            String
+  subject         String
+  body            String
+  from            String
+  to              String
+  createdAt       DateTime        @default(now())
+  deletedAt       DateTime?
+  preheader       String?
+  unsubscribe_url String?
+  logo_url        String?
+  brand_colors    Json?
+  font_family     String?
+  show_header     Boolean         @default(true)
+  show_footer     Boolean         @default(true)
+  text_part       String?
+  BulkEmailJob    BulkEmailJob[]
+  EmailCampaign   EmailCampaign[]
+  Tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  Variable        Variable[]
+}
+
+model Feedback {
+  id         String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  tenant_id  String
+  name       String
+  email      String?
+  category   FeedbackCategory @default(GENERAL_COMMENT)
+  rating     Int?
+  page       String?
+  message    String
+  created_at DateTime         @default(now()) @db.Timestamptz(6)
+  Tenant     Tenant           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_feedback_tenant")
+
+  @@index([tenant_id, category], map: "idx_feedback_tenant_category")
+  @@index([tenant_id, created_at], map: "idx_feedback_tenant_created_at")
+}
+
+model GeneratedEmail {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subject        String
+  content        String
+  createdAt      DateTime      @default(now()) @db.Timestamp(6)
+  scheduledDate  DateTime?     @db.Timestamp(6)
+  emailMessageId String?       @db.Uuid
+  EmailMessage   EmailMessage? @relation(fields: [emailMessageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model InboundReceipt {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String
+  snsMessageId      String    @unique
+  providerMessageId String
+  s3Bucket          String
+  s3Key             String
+  status            String
+  error             String?
+  receivedAt        DateTime  @default(now()) @db.Timestamptz(6)
+  processedAt       DateTime? @db.Timestamptz(6)
+  Tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "inboundreceipt_tenant_fkey")
+
+  @@index([tenantId, receivedAt], map: "inboundreceipt_tenant_receivedAt_idx")
+}
+
+model KnowledgeDocument {
+  id             String    @id(map: "knowledge_document_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id      String
+  file_key       String
+  filename       String
+  mime_type      String
+  size_bytes     Int?
+  status         String    @default("UPLOADED")
+  extracted_text String?
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  processed_at   DateTime? @db.Timestamptz(6)
+  Tenant         Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "knowledge_document_tenant_id_fkey")
+
+  @@index([tenant_id, status], map: "idx_knowledge_document_status")
+}
+
+model Lead {
+  id                String              @id
+  tenantId          String
+  companyName       String
+  contactEmail      String[]
+  contactName       String?
+  contactPhone      String[]
+  status            LeadStatus          @default(FOLLOW_UP)
+  confidence        Float?
+  metadata          Json?
+  createdAt         DateTime            @default(now())
+  deletedAt         DateTime?
+  contactAddress    String[]
+  source            lead_source         @default(AI_GENERATED)
+  linkedInUrl       String?             @unique
+  companySize       Int?                @default(0)
+  jobId             String?
+  description       String?
+  csvJobId          String?             @db.Uuid
+  BulkEmailJobLead  BulkEmailJobLead[]
+  CampaignLead      CampaignLead[]
+  EmailMessage      EmailMessage[]
+  EmailVerification EmailVerification[]
+  CsvImportJob      CsvImportJob?       @relation(fields: [csvJobId], references: [id], onUpdate: NoAction)
+  LeadGenerationJob LeadGenerationJob?  @relation(fields: [jobId], references: [id])
+  Tenant            Tenant              @relation(fields: [tenantId], references: [id])
+
+  @@unique([jobId, contactEmail], map: "Lead_jobId_email_key")
+  @@index([jobId])
+  @@index([tenantId, status])
+}
+
+model LeadGenerationJob {
+  id             String    @id
+  tenantId       String
+  prompt         String?
+  industry       String?
+  location       String?
+  status         String    @default("QUEUED")
+  batchId        String?
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+  totalRequested Int
+  generatedCount Int       @default(0)
+  urls           String[]  @default([])
+  Lead           Lead[]
+  Tenant         Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status])
+}
+
+model MeetingBooking {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  intentId       String         @db.Uuid
+  finalStart     DateTime       @db.Timestamptz(6)
+  finalEnd       DateTime       @db.Timestamptz(6)
+  calendarSystem CalendarSystem
+  eventId        String?
+  icsUid         String?
+  createdAt      DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime       @default(now()) @db.Timestamptz(6)
+  MeetingIntent  MeetingIntent  @relation(fields: [intentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([intentId], map: "MeetingBooking_intent_idx")
+}
+
+model MeetingIntent {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String
+  conversationId String
+  status         MeetingIntentStatus @default(OFFERED)
+  createdAt      DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime            @default(now()) @db.Timestamptz(6)
+  MeetingBooking MeetingBooking[]
+  MeetingOffer   MeetingOffer[]
+
+  @@index([tenantId, conversationId], map: "MeetingIntent_tenant_conversation_idx")
+}
+
+model MeetingOffer {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  intentId      String        @db.Uuid
+  slotStart     DateTime      @db.Timestamptz(6)
+  slotEnd       DateTime      @db.Timestamptz(6)
+  recipientTz   String        @default("UTC")
+  tokenHash     String?
+  expiresAt     DateTime?     @db.Timestamptz(6)
+  createdAt     DateTime      @default(now()) @db.Timestamptz(6)
+  MeetingIntent MeetingIntent @relation(fields: [intentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([intentId, slotStart, slotEnd], map: "MeetingOffer_unique_slot_per_intent")
+}
+
+model PaymentTransaction {
+  id             String       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  tenantId       String
+  subscriptionId String
+  providerId     String       @unique(map: "paymenttransaction_providerid_unique")
+  amount         Int
+  status         String       @default("INITIATED")
+  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+  invoiceId      String?
+  invoiceUrl     String?
+  paymentId      String?
+  Subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_paymenttransaction_subscription")
+  Tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_paymenttransaction_tenant")
+}
+
+model Plan {
+  id          String        @id
+  code        String        @unique
+  name        String
+  PlanVersion PlanVersion[]
+}
+
+model PlanVersion {
+  id             String         @id @default(dbgenerated("gen_random_uuid()"))
+  planId         String
+  version        Int
+  zone           ZoneCode
+  bucket         Experiment
+  cadence        BillingCadence
+  currency       String
+  basePriceCents Int
+  createdAt      DateTime       @default(now())
+  components     Component[]
+  Plan           Plan           @relation(fields: [planId], references: [id])
+  PriceId        PriceId[]
+
+  @@unique([planId, zone, bucket, cadence, version])
+}
+
+model PriceId {
+  id              String         @id @default(dbgenerated("(gen_random_uuid())::text"))
+  planVersionId   String
+  gateway         PaymentGateway
+  price           Int?
+  externalPriceId String
+  gatewayPlanId   String?
+  PlanVersion     PlanVersion    @relation(fields: [planVersionId], references: [id])
+
+  @@unique([planVersionId, gateway])
+}
+
+model Product {
+  id              String         @id(map: "product_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id      String         @db.Uuid
+  name            String         @db.VarChar(120)
+  category        String?
+  description     String?
+  features        String?
+  benefits        String?
+  pricing         String?
+  target_audience String?
+  use_cases       String?
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime       @default(now()) @db.Timestamptz(6)
+  CompanyProfile  CompanyProfile @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "product_company_id_fkey")
+  ProductQA       ProductQA[]
+}
+
+model ProductQA {
+  id         String  @id(map: "product_qa_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id String  @db.Uuid
+  question   String
+  answer     String
+  Product    Product @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "product_qa_product_id_fkey")
+}
+
 model RagReadiness {
   tenant_id   String   @id
   score       Int
@@ -772,24 +589,410 @@ model RagReadiness {
   Tenant      Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
-enum PlanType {
-  FREE
-  PRO
-  GROWTH
-  STARTER
+model Subscription {
+  id                 String               @id
+  tenantId           String
+  planVersionId      String
+  zone               ZoneCode
+  status             String
+  currentStart       DateTime
+  currentEnd         DateTime
+  brokerId           String?
+  planPriceId        String?
+  cycle              String?              @default("MONTHLY")
+  nextBillingAt      DateTime?            @db.Timestamptz(6)
+  provider           String?
+  providerSubId      String?
+  createdAt          DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime             @default(now()) @db.Timestamptz(6)
+  providerCustId     String?
+  cancelAtCycleEnd   Boolean?
+  PaymentTransaction PaymentTransaction[]
+  UsageCounter       UsageCounter[]
+  UsageEvent         UsageEvent[]
 }
 
-enum UserRole {
-  SUPERADMIN
-  ADMIN
-  MANAGER
+model Tenant {
+  id                 String               @id
+  name               String
+  plan               PlanType             @default(FREE)
+  createdAt          DateTime             @default(now())
+  countryCode        String?
+  zone               ZoneCode             @default(IN)
+  deletedAt          DateTime?
+  BulkEmailJob       BulkEmailJob[]
+  BulkSnippet        BulkSnippet[]
+  CalendarConnection CalendarConnection[]
+  CompanyProfile     CompanyProfile?
+  Conversation       Conversation[]
+  DomainIdentity     DomainIdentity[]
+  EmailCampaign      EmailCampaign[]
+  EmailMessage       EmailMessage[]
+  EmailTemplate      EmailTemplate[]
+  EmailVerification  EmailVerification[]
+  EmailWarmupProfile EmailWarmupProfile[]
+  Feedback           Feedback[]
+  InboundReceipt     InboundReceipt[]
+  KnowledgeDocument  KnowledgeDocument[]
+  Lead               Lead[]
+  LeadGenerationJob  LeadGenerationJob[]
+  PaymentTransaction PaymentTransaction[]
+  RagReadiness       RagReadiness?
+  TenantOnboarding   TenantOnboarding?
+  UsageCounter       UsageCounter[]
+  UsageEvent         UsageEvent[]
+  User               User[]
+  WarmupDailyStat    WarmupDailyStat[]
+  WarmupInbox        WarmupInbox[]
+  WebsiteContent     WebsiteContent[]
 }
 
-enum LeadStatus {
-  NOT_INTERESTED
-  FOLLOW_UP
-  INTERESTED
-  IMMEDIATE_ACTION
+model TenantOnboarding {
+  tenant_id     String             @id
+  role          OnboardingRole
+  hear_about_us AcquisitionChannel
+  primary_goal  SalesGoal
+  createdat     DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime           @default(now()) @db.Timestamptz(6)
+  Tenant        Tenant             @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model TenantRAG {
+  id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id       String
+  source          String
+  sourceId        String
+  embedding       Unsupported("vector")?
+  created_at      DateTime               @default(now()) @db.Timestamptz(6)
+  chunk_hash      String?
+  version         Int?                   @default(1)
+  is_active       Boolean?               @default(true)
+  updated_at      DateTime?              @default(now()) @db.Timestamptz(6)
+  embedding_model String?
+  simhash_bigint  BigInt?
+
+  @@unique([tenant_id, chunk_hash], map: "tenantrag_tenant_hash_uq")
+  @@index([tenant_id], map: "idx_tenant_rag_tenant_id")
+  @@index([tenant_id, is_active, updated_at(sort: Desc)], map: "tenantrag_active_updated_idx")
+  @@index([tenant_id, source], map: "tenantrag_source_idx")
+}
+
+model UsageCounter {
+  tenantId       String
+  subscriptionId String
+  metric         MeterMetric
+  windowType     CapPeriod
+  windowStart    DateTime     @db.Timestamptz(6)
+  windowEnd      DateTime?    @db.Timestamptz(6)
+  qty            Int          @default(0)
+  updatedAt      DateTime     @default(now()) @db.Timestamptz(6)
+  Subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "UsageCounter_subscription_fkey")
+  Tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "UsageCounter_tenant_fkey")
+
+  @@id([tenantId, subscriptionId, metric, windowType, windowStart])
+  @@index([tenantId, metric, windowType, windowStart], map: "UsageCounter_lookup_idx")
+}
+
+model UsageEvent {
+  id             BigInt        @id @default(autoincrement())
+  tenantId       String
+  metric         MeterMetric
+  qty            Int
+  recordedAt     DateTime      @default(now())
+  subscriptionId String?
+  idempotencyKey String?
+  Subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onUpdate: NoAction, map: "UsageEvent_subscription_fkey")
+  Tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "UsageEvent_tenant_fkey")
+
+  @@index([tenantId, recordedAt])
+  @@index([tenantId, recordedAt], map: "UsageEvent_tenant_recordedAt_idx")
+}
+
+model User {
+  id                 String               @id
+  tenantId           String
+  email              String               @unique
+  passwordHash       String
+  role               UserRole             @default(MANAGER)
+  verified           Boolean              @default(false)
+  createdAt          DateTime             @default(now())
+  deletedAt          DateTime?
+  oauthProvider      String?              @db.VarChar(32)
+  oauthId            String?
+  name               String?              @db.VarChar(120)
+  phoneNumber        String?              @db.VarChar(32)
+  location           String?              @db.VarChar(120)
+  bio                String?
+  avatarUrl          String?
+  CalendarConnection CalendarConnection[]
+  Tenant             Tenant               @relation(fields: [tenantId], references: [id])
+}
+
+model Variable {
+  id            String        @id
+  key           String
+  defaultValue  String?
+  templateId    String
+  EmailTemplate EmailTemplate @relation(fields: [templateId], references: [id])
+}
+
+model WaitListMembers {
+  id              String   @id(map: "wait_list_members_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String
+  email           String   @unique(map: "wait_list_members_email_key")
+  whatsapp_number String
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model WebhookEvent {
+  eventId     String    @id
+  provider    String
+  eventType   String
+  receivedAt  DateTime  @default(now()) @db.Timestamptz(6)
+  processed   Boolean   @default(false)
+  processedAt DateTime? @db.Timestamptz(6)
+}
+
+model WebsiteContent {
+  id            String    @id(map: "website_content_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id     String
+  url           String
+  title         String?
+  status        String    @default("PENDING")
+  crawl_summary String?
+  added_at      DateTime  @default(now()) @db.Timestamptz(6)
+  finished_at   DateTime? @db.Timestamptz(6)
+  Tenant        Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "website_content_tenant_id_fkey")
+
+  @@index([tenant_id, status], map: "idx_website_content_status")
+}
+
+model identity_link {
+  anonymous_id String
+  user_id      String
+  linked_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@id([anonymous_id, user_id])
+}
+
+model EmailVerification {
+  id         String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String
+  leadId     String?
+  email      String
+  status     EmailVerificationStatus @default(PENDING)
+  score      Int?
+  reason     String?
+  provider   String?
+  rawPayload Json                    @default("{}")
+  checkedAt  DateTime?               @db.Timestamptz(6)
+  createdAt  DateTime                @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime                @default(now()) @db.Timestamptz(6)
+  Lead       Lead?                   @relation(fields: [leadId], references: [id], onUpdate: NoAction, map: "fk_emailverification_lead")
+  Tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_emailverification_tenant")
+
+  @@unique([tenantId, email], map: "emailverification_tenant_email_uq")
+  @@index([tenantId, status], map: "idx_emailverification_tenant_status")
+}
+
+model EmailWarmupProfile {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String
+  emailIdentityId String         @unique
+  mode            WarmupMode     @default(AUTO)
+  status          WarmupStatus   @default(ACTIVE)
+  startDate       DateTime       @default(now()) @db.Timestamptz(6)
+  targetDailyMax  Int            @default(50)
+  currentDailyMax Int            @default(5)
+  lastAdjustedAt  DateTime?      @db.Timestamptz(6)
+  providerHint    String?
+  notes           String?
+  createdAt       DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime       @default(now()) @db.Timestamptz(6)
+  EmailIdentity   EmailIdentity  @relation(fields: [emailIdentityId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_warmup_profile_identity")
+  Tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_warmup_profile_tenant")
+  WarmupThread    WarmupThread[]
+
+  @@index([tenantId, status], map: "idx_warmup_profile_tenant_status")
+}
+
+model WarmupDailyStat {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String
+  emailIdentityId String
+  date            DateTime      @db.Date
+  plannedSends    Int           @default(0)
+  sentCount       Int           @default(0)
+  openCount       Int           @default(0)
+  replyCount      Int           @default(0)
+  bounceCount     Int           @default(0)
+  complaintCount  Int           @default(0)
+  spamFolderCount Int           @default(0)
+  createdAt       DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime      @default(now()) @db.Timestamptz(6)
+  EmailIdentity   EmailIdentity @relation(fields: [emailIdentityId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_warmup_daily_identity")
+  Tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_warmup_daily_tenant")
+
+  @@unique([tenantId, emailIdentityId, date], map: "warmup_daily_identity_date_uq")
+  @@index([tenantId, date], map: "idx_warmup_daily_tenant_date")
+}
+
+model WarmupInbox {
+  id                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                 String             @unique
+  provider              String?
+  domain                String
+  label                 String?
+  ownerTenantId         String?
+  autoEngagementEnabled Boolean            @default(true)
+  status                WarmupInboxStatus  @default(ACTIVE)
+  maxDailyVolume        Int                @default(100)
+  metadata              Json               @default("{}")
+  createdAt             DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime           @default(now()) @db.Timestamptz(6)
+  Tenant                Tenant?            @relation(fields: [ownerTenantId], references: [id], onUpdate: NoAction, map: "fk_warmup_inbox_owner")
+  WarmupInboxEvent      WarmupInboxEvent[]
+  WarmupThread          WarmupThread[]
+}
+
+model WarmupInboxEvent {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  warmupInboxId  String        @db.Uuid
+  tenantId       String
+  emailMessageId String?       @db.Uuid
+  action         WarmupAction
+  occurredAt     DateTime      @default(now()) @db.Timestamptz(6)
+  details        Json          @default("{}")
+  WarmupInbox    WarmupInbox   @relation(fields: [warmupInboxId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_warmup_event_inbox")
+  EmailMessage   EmailMessage? @relation(fields: [emailMessageId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_warmup_event_message")
+
+  @@index([tenantId, occurredAt], map: "idx_warmup_inbox_event_tenant_time")
+  @@index([warmupInboxId, occurredAt], map: "idx_warmup_inbox_event_time")
+}
+
+model WarmupMessage {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String
+  threadId           String               @db.Uuid
+  direction          email_direction
+  provider           String               @default("AWS_SES")
+  providerMessageId  String?
+  subject            String?
+  from               String[]             @default([])
+  to                 String[]             @default([])
+  text               String?
+  html               String?
+  headers            Json?                @default("{}")
+  warmupMarker       String
+  configurationSet   String?
+  createdAt          DateTime             @default(now()) @db.Timestamptz(6)
+  sentAt             DateTime?            @db.Timestamptz(6)
+  receivedAt         DateTime?            @db.Timestamptz(6)
+  WarmupThread       WarmupThread         @relation(fields: [threadId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  WarmupMessageEvent WarmupMessageEvent[]
+
+  @@unique([tenantId, providerMessageId], map: "warmupmessage_tenant_providerMessageId_uq")
+  @@index([tenantId, createdAt], map: "idx_warmupmessage_tenant_time")
+}
+
+model WarmupMessageEvent {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String
+  warmupMessageId   String        @db.Uuid
+  providerMessageId String
+  eventType         String
+  occurredAt        DateTime      @db.Timestamptz(6)
+  snsMessageId      String        @unique
+  payload           Json          @default("{}")
+  recipient         String?
+  recipientDomain   String?
+  bounceType        String?
+  complaintType     String?
+  WarmupMessage     WarmupMessage @relation(fields: [warmupMessageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([warmupMessageId], map: "idx_warmupmessageevent_message")
+  @@index([tenantId, occurredAt], map: "idx_warmupmessageevent_tenant_time")
+}
+
+model WarmupThread {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String
+  threadKey          String
+  profileId          String             @db.Uuid
+  inboxId            String?            @db.Uuid
+  subject            String?
+  participants       String[]           @default([])
+  createdAt          DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime           @default(now()) @db.Timestamptz(6)
+  WarmupMessage      WarmupMessage[]
+  WarmupInbox        WarmupInbox?       @relation(fields: [inboxId], references: [id], onUpdate: NoAction)
+  EmailWarmupProfile EmailWarmupProfile @relation(fields: [profileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tenantId, threadKey], map: "warmupthread_tenant_threadkey_uq")
+  @@index([tenantId, profileId, updatedAt], map: "idx_warmupthread_tenant_profile_time")
+}
+
+enum AcquisitionChannel {
+  GOOGLE_SEARCH
+  SOCIAL_MEDIA
+  REFERRAL
+  ADVERTISEMENT
+  BLOG
+  OTHER
+}
+
+enum BillingCadence {
+  MONTHLY
+  YEARLY
+}
+
+enum BulkEmailJobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  PAUSED
+  FAILED
+}
+
+enum CalendarProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+enum CalendarSystem {
+  GOOGLE
+  MICROSOFT
+  ICS
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum CampaignType {
+  COLD_OUTREACH
+  FOLLOW_UP_SEQUENCE
+  LEAD_NURTURING
+  RE_ENGAGEMENT
+  WARMUP
+}
+
+enum CapPeriod {
+  DAY
+  MONTH
+  PERIOD
+}
+
+enum DedupePolicy {
+  EMAIL
+  LINKEDIN
+  PHONE
+  DOMAIN_PLUS_NAME
+  NONE
 }
 
 enum EmailStatus {
@@ -802,46 +1005,10 @@ enum EmailStatus {
   FAILED
 }
 
-enum BulkEmailJobStatus {
-  QUEUED
-  PROCESSING
-  COMPLETED
-  PAUSED
-  FAILED
-}
-
-enum CampaignStatus {
-  DRAFT
-  SCHEDULED
-  ACTIVE
-  COMPLETED
-  CANCELLED
-}
-
-enum ZoneCode {
-  IN
-  US
-  EU
-  AE
-  ROW
-}
-
-enum MeterMetric {
-  JOB
-  CLASSIFICATION
-  SEAT
-  EMAILS
-}
-
-enum CapPeriod {
-  DAY
-  MONTH
-  PERIOD
-}
-
-enum BillingCadence {
-  MONTHLY
-  YEARLY
+enum EmailType {
+  MANUAL
+  AI_GENERATED
+  TEMPLATE
 }
 
 enum Experiment {
@@ -851,17 +1018,98 @@ enum Experiment {
   C
 }
 
-enum CampaignType {
-  COLD_OUTREACH
-  FOLLOW_UP_SEQUENCE
-  LEAD_NURTURING
-  RE_ENGAGEMENT
+enum FeedbackCategory {
+  BUG_REPORT
+  FEATURE_REQUEST
+  GENERAL_COMMENT
+  TESTIMONIAL
+  OTHER
 }
 
-enum lead_source {
-  AI_GENERATED
-  CSV_UPLOAD
-  MANUAL_ENTRY
+enum ImportMode {
+  INSERT_ONLY
+  UPSERT
+  DRY_RUN
+}
+
+enum LeadStatus {
+  NOT_INTERESTED
+  FOLLOW_UP
+  INTERESTED
+  IMMEDIATE_ACTION
+}
+
+enum MeetingIntentStatus {
+  OFFERED
+  CONFIRMED
+  RESCHEDULED
+  CANCELLED
+}
+
+enum MeterMetric {
+  JOB
+  CLASSIFICATION
+  SEAT
+  EMAILS
+}
+
+enum OnboardingRole {
+  FOUNDER_CEO
+  SALES_MANAGER
+  MARKETING_MANAGER
+  BUSINESS_DEV
+  OTHER
+}
+
+enum PaymentGateway {
+  RAZORPAY
+  STRIPE
+  WISE
+}
+
+enum PlanType {
+  FREE
+  PRO
+  GROWTH
+  STARTER
+}
+
+enum RowProcessStatus {
+  QUEUED
+  PROCESSED
+  DUPLICATE
+  FAILED
+  SKIPPED
+}
+
+enum SalesGoal {
+  INCREASE_LEADS
+  IMPROVE_CONVERSION
+  AUTOMATE_PROCESS
+  BETTER_TRACKING
+  TEAM_COLLABORATION
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+  PENDING
+}
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  MANAGER
+}
+
+enum ZoneCode {
+  IN
+  US
+  EU
+  AE
+  ROW
 }
 
 enum crawl_status {
@@ -878,100 +1126,49 @@ enum document_status {
   ERROR
 }
 
-enum AcquisitionChannel {
-  GOOGLE_SEARCH
-  SOCIAL_MEDIA
-  REFERRAL
-  ADVERTISEMENT
-  BLOG
-  OTHER
-}
-
-enum FeedbackCategory {
-  BUG_REPORT
-  FEATURE_REQUEST
-  GENERAL_COMMENT
-  TESTIMONIAL
-  OTHER
-}
-
-enum OnboardingRole {
-  FOUNDER_CEO
-  SALES_MANAGER
-  MARKETING_MANAGER
-  BUSINESS_DEV
-  OTHER
-}
-
-enum SalesGoal {
-  INCREASE_LEADS
-  IMPROVE_CONVERSION
-  AUTOMATE_PROCESS
-  BETTER_TRACKING
-  TEAM_COLLABORATION
-}
-
-enum EmailType {
-  MANUAL
-  AI_GENERATED
-  TEMPLATE
-}
-
 enum email_direction {
   INBOUND
   OUTBOUND
 }
 
-enum PaymentGateway {
-  RAZORPAY
-  STRIPE
-  WISE
+enum lead_source {
+  AI_GENERATED
+  CSV_UPLOAD
+  MANUAL_ENTRY
 }
 
-enum SubscriptionStatus {
-  ACTIVE
-  PAST_DUE
-  CANCELED
-  EXPIRED
+enum EmailVerificationStatus {
   PENDING
+  VALID
+  INVALID
+  CATCH_ALL
+  RISKY
+  UNKNOWN
 }
 
-enum CalendarProvider {
-  GOOGLE
-  MICROSOFT
+enum WarmupAction {
+  OPENED
+  REPLIED
+  MOVED_FROM_SPAM
+  STARRED
+  OTHER
 }
 
-enum CalendarSystem {
-  GOOGLE
-  MICROSOFT
-  ICS
+enum WarmupInboxStatus {
+  ACTIVE
+  PAUSED
+  DISABLED
 }
 
-enum MeetingIntentStatus {
-  OFFERED
-  CONFIRMED
-  RESCHEDULED
-  CANCELLED
+enum WarmupMode {
+  OFF
+  AUTO
+  MANUAL_ONLY
 }
 
-enum DedupePolicy {
-  EMAIL
-  LINKEDIN
-  PHONE
-  DOMAIN_PLUS_NAME
-  NONE
-}
-
-enum ImportMode {
-  INSERT_ONLY
-  UPSERT
-  DRY_RUN
-}
-
-enum RowProcessStatus {
-  QUEUED
-  PROCESSED
-  DUPLICATE
-  FAILED
-  SKIPPED
+enum WarmupStatus {
+  INACTIVE
+  ACTIVE
+  PAUSED
+  COMPLETED
 }
