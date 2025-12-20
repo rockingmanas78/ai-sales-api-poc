@@ -50,18 +50,22 @@ function computeNextDailyMax({ currentDailyMax, targetDailyMax }) {
   return Math.min(Math.max(increased, currentDailyMax + 1), targetDailyMax);
 }
 
-async function upsertDailyStat({ tenantId, profileId, dateUtc }) {
+async function upsertDailyStat({
+  tenantId,
+  emailIdentityId,
+  dateUtc,
+}) {
   return prisma.warmupDailyStat.upsert({
     where: {
-      warmup_daily_profile_date_uq: {
+      tenantId_emailIdentityId_date: {
         tenantId,
-        profileId,
+        emailIdentityId,
         date: dateUtc,
       },
     },
     create: {
       tenantId,
-      profileId,
+      emailIdentityId,
       date: dateUtc,
       plannedSends: 0,
       sentCount: 0,
@@ -74,6 +78,7 @@ async function upsertDailyStat({ tenantId, profileId, dateUtc }) {
     update: {},
   });
 }
+
 
 async function countWarmupDraftsCreatedToday({
   tenantId,
@@ -159,10 +164,11 @@ export async function runWarmupSchedulerTick() {
       if (dailyCap <= 0) continue;
 
       const dailyStat = await upsertDailyStat({
-        tenantId,
-        profileId: profile.id,
-        dateUtc: startOfTodayUtc,
-      });
+  tenantId,
+  emailIdentityId: profile.EmailIdentity.id,
+  dateUtc: startOfTodayUtc,
+});
+
 
       const alreadyDrafted = await countWarmupDraftsCreatedToday({
         tenantId,

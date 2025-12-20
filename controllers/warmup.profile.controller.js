@@ -14,8 +14,8 @@ const prisma = new PrismaClient();
 ===================================================== */
 export async function createWarmupProfile(req, res, next) {
   try {
-    const tenantId = req.user?.tenantId;
-    const { emailIdentityId, mode, targetDailyMax, providerHint, notes } =
+    // const tenantId = req.user?.tenantId;
+    const {tenantId, emailIdentityId, mode, targetDailyMax, providerHint, notes } =
       req.body;
 
     if (!tenantId || !emailIdentityId) {

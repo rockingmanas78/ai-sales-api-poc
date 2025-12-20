@@ -17,7 +17,7 @@ router.get("/", listWarmupInboxes);
  * POST /api/warmup-inboxes
  * Create a new warmup inbox (ADMIN / SYSTEM only)
  */
-router.post("/", createWarmupInbox);
+router.post("/create", createWarmupInbox);
 
 /**
  * PATCH /api/warmup-inboxes/:id

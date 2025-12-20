@@ -13,6 +13,7 @@ function assertInternalSecret(request, expected) {
 export async function runWarmupSchedulerNow(req, res, next) {
   try {
     if (!assertInternalSecret(req, process.env.WARMUP_INBOUND_WEBHOOK_SECRET)) {
+      console.log("process.env.WARMUP_INBOUND_WEBHOOK_SECRET",process.env.WARMUP_INBOUND_WEBHOOK_SECRET);
       return res.status(401).json({ error: "unauthorized" });
     }
     const result = await runWarmupSchedulerTick();
