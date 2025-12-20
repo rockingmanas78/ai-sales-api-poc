@@ -61,7 +61,7 @@ async function upsertDailyStat({ tenantId, emailIdentityId, dateUtc }) {
     },
     create: {
       tenantId,
-      emailIdentityId,
+      emailIdentityId: emailIdentityId,
       date: dateUtc,
       plannedSends: 0,
       sentCount: 0,
