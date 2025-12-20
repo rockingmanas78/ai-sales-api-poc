@@ -10,7 +10,8 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 export async function listWarmupThreads(req, res, next) {
   try {
-    const tenantId = req.user?.tenantId;
+    // const tenantId = req.user?.tenantId;
+    const {tenantId}=req.body;
     const { profileId, limit = 20, cursor } = req.query;
 
     if (!tenantId) {

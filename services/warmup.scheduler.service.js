@@ -63,7 +63,6 @@ async function upsertDailyStat({ tenantId, emailIdentityId, dateUtc }) {
       tenantId,
       emailIdentityId: emailIdentityId,
       date: dateUtc,
-      date: dateUtc,
       plannedSends: 0,
       sentCount: 0,
       openCount: 0,
@@ -75,6 +74,7 @@ async function upsertDailyStat({ tenantId, emailIdentityId, dateUtc }) {
     update: {},
   });
 }
+
 
 async function countWarmupDraftsCreatedToday({
   tenantId,

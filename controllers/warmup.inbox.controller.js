@@ -67,13 +67,13 @@ export async function createWarmupInbox(req, res) {
     });
   } catch (error) {
     console.error("[createWarmupInbox] error:", error);
-
     return res.status(500).json({
       success: false,
       error: "Failed to create warmup inbox",
     });
   }
 }
+
 
 /**
  * Update warmup inbox

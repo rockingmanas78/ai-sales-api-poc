@@ -34,7 +34,13 @@ export async function runWarmupSenderTick() {
       WarmupThread: {
         select: {
           tenantId: true,
-          profileId: true,
+          EmailWarmupProfile: {
+            select: {
+              EmailIdentity: {
+                select: { id: true },
+              },
+            },
+          },
         },
       },
     },
@@ -42,7 +48,9 @@ export async function runWarmupSenderTick() {
     take: maxToSendThisTick,
   });
 
-  if (!draftMessages.length) return { sent: 0 };
+  if (!draftMessages.length) {
+    return { sent: 0 };
+  }
 
   const todayUtcDateOnly = getStartOfTodayUtcDateOnly();
   let sentCount = 0;
@@ -50,12 +58,26 @@ export async function runWarmupSenderTick() {
   for (const message of draftMessages) {
     try {
       const tenantId = message.tenantId;
-      const profileId = message.WarmupThread.profileId;
+
+      const emailIdentityId =
+        message.WarmupThread?.EmailWarmupProfile?.EmailIdentity?.id;
+
+      if (!tenantId || !emailIdentityId) {
+        console.warn(
+          "Skipping warmupMessage due to missing identity",
+          message.id
+        );
+        continue;
+      }
 
       const fromEmail = safeLowercaseEmail(message.from?.[0] || "");
       const toEmail = safeLowercaseEmail(message.to?.[0] || "");
 
-      if (!tenantId || !profileId || !fromEmail || !toEmail) {
+      if (!fromEmail || !toEmail) {
+        console.warn(
+          "Skipping warmupMessage due to invalid emails",
+          message.id
+        );
         continue;
       }
 
@@ -84,7 +106,7 @@ export async function runWarmupSenderTick() {
       }
 
       await prisma.$transaction(async (tx) => {
-        // Update WarmupMessage
+        // 1️⃣ Update WarmupMessage
         await tx.warmupMessage.update({
           where: { id: message.id },
           data: {
@@ -93,7 +115,7 @@ export async function runWarmupSenderTick() {
           },
         });
 
-        // Create SEND event
+        // 2️⃣ Create SEND event
         await tx.warmupMessageEvent.create({
           data: {
             tenantId,
@@ -106,11 +128,11 @@ export async function runWarmupSenderTick() {
           },
         });
 
-        // Update daily stat atomically
+        // 3️⃣ Update daily stats (IDENTITY-BASED ✅)
         await tx.warmupDailyStat.updateMany({
           where: {
             tenantId,
-            profileId,
+            emailIdentityId,
             date: todayUtcDateOnly,
           },
           data: {
@@ -127,11 +149,11 @@ export async function runWarmupSenderTick() {
         error?.message || error
       );
 
-      // 🔒 Mark as failed to avoid infinite retry
+      // 🔒 Mark failed uniquely (avoids UNIQUE constraint crash)
       await prisma.warmupMessage.update({
         where: { id: message.id },
         data: {
-          providerMessageId: "FAILED",
+          providerMessageId: `FAILED-${message.id}`,
         },
       });
     }

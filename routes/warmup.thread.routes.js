@@ -9,7 +9,7 @@ import {
 const router = express.Router();
 
 // Tenant-auth protected routes
-router.get("/threads", listWarmupThreads);
+router.get("/list", listWarmupThreads);
 router.get("/threads/:id", getWarmupThreadById);
 
 export default router;
