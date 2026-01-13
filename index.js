@@ -42,8 +42,6 @@ import warmWebhook from "./routes/warmup.webhook.routes.js";
 import warmupMessage from "./routes/warmup.message.routes.js"
 import  warmupThread  from "./routes/warmup.thread.routes.js";
 import warmupMessageEvent from "./routes/warmup.messageEvent.routes.js";
-import emailVerificationRouter from "./routes/emailVerification.route.js";
-
 import { startBulkEmailWorker, startCsvJobWorker } from "./jobs/jobWorkers.js";
 
 const app = express();
