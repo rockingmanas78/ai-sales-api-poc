@@ -8,6 +8,10 @@ export async function assertEmailIdentityBelongsToTenantAndVerified({
   const emailIdentity = await prisma.emailIdentity.findFirst({
     where: {
       id: emailIdentityId,
+      // // CHANGE THIS: 'domain' -> 'DomainIdentity'
+      // DomainIdentity: { 
+      //   tenantId 
+      // },
       deletedAt: null,
       verificationStatus: { in: ["Success", "Verified"] },
       DomainIdentity: {
