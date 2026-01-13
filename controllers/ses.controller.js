@@ -141,7 +141,7 @@ export async function checkVerificationStatus(req, res, next) {
     // Update EmailIdentity if matches
     await prisma.emailIdentity.updateMany({
       where: {
-        domain: { tenantId: req.user.tenantId },
+        DomainIdentity: { tenantId: req.user.tenantId }, // Match the model name in schema
         emailAddress: identity,
       },
       data: {

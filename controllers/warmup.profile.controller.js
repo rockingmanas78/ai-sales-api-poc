@@ -18,6 +18,8 @@ export async function createWarmupProfile(req, res, next) {
     const {tenantId, emailIdentityId, mode, targetDailyMax, providerHint, notes } =
       req.body;
 
+    console.log("Creating warmup profile", { tenantId, emailIdentityId, mode, targetDailyMax });
+
     if (!tenantId || !emailIdentityId) {
       return res.status(400).json({
         error: "tenantId and emailIdentityId are required",
@@ -159,7 +161,11 @@ export async function getWarmupStats(req, res, next) {
       const identity = await prisma.emailIdentity.findFirst({
         where: {
           id: String(emailIdentityId),
-          tenantId,
+          // CHANGE THIS: 'tenantId' is NOT directly on emailIdentity, 
+          // it is on the DomainIdentity relation.
+          DomainIdentity: {
+            tenantId
+          },
           deletedAt: null,
         },
         select: { id: true },

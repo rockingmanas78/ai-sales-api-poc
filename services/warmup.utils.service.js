@@ -80,3 +80,25 @@ export function extractPlusTokenFromEmails(input) {
   }
   return null;
 }
+
+// services/warmup.dns.service.js
+
+export function getWarmupDnsInstructions(subdomain) {
+  const region = process.env.AWS_REGION || "ap-south-1";
+  const inboundEndpoint = `inbound-smtp.${region}.amazonaws.com`;
+
+  return [
+    {
+      type: "MX",
+      host: subdomain, // e.g., warmup.example.com
+      value: `10 ${inboundEndpoint}`,
+      description: "Directs mail for this subdomain to SES without affecting root domain mail."
+    },
+    {
+      type: "TXT",
+      host: subdomain,
+      value: "v=spf1 include:amazonses.com ~all",
+      description: "Authorizes SES to send on behalf of this subdomain."
+    }
+  ];
+}
