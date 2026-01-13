@@ -6,15 +6,16 @@ import {
   updateWarmupProfile,
   getWarmupStats,
 } from "../controllers/warmup.profile.controller.js";
+import verifyToken from "../middlewares/verifyToken.js";
 
 const router = express.Router();
 
 /**
  * Tenant-auth routes
  */
-router.post("/create",  createWarmupProfile);
-router.get("/list", listWarmupProfiles);
-router.patch("/update/:id", updateWarmupProfile);
-router.get("/stats",  getWarmupStats);
+router.post("/create", verifyToken(), createWarmupProfile);
+router.get("/list", verifyToken(), listWarmupProfiles);
+router.patch("/update/:id", verifyToken(), updateWarmupProfile);
+router.get("/stats", verifyToken(), getWarmupStats);
 
 export default router;

@@ -74,6 +74,7 @@ export async function processWarmupInboundEvent(eventPayload) {
   console.log("Inb")
   const toEmails = extractEmails(eventPayload.to);
   const fromEmails = extractEmails(eventPayload.from);
+  const recipientEmail = toEmails[0];
   const headers = eventPayload.headers || {};
 
   if (!toEmails.length || !fromEmails.length) return;
@@ -83,15 +84,15 @@ export async function processWarmupInboundEvent(eventPayload) {
 
   // A) inbound to warmup inbox
   const warmupInbox = await prisma.warmupInbox.findFirst({
-    where: { email: normalizedTo[0], status: "ACTIVE" },
+    where: { email: recipientEmail, status: "ACTIVE" },
   });
 
   if (warmupInbox) {
     await handleInboundToWarmupInbox({
       warmupInbox,
-      normalizedTo,
-      normalizedFrom,
-      headers,
+      normalizedTo: toEmails,
+      normalizedFrom: extractEmails(eventPayload.from),
+      headers: eventPayload.headers || {},
       eventPayload,
     });
     return;

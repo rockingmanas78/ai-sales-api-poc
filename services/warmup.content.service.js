@@ -2,7 +2,6 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-
 const SUBJECT_TEMPLATES = [
   "Quick question",
   "Checking in",
