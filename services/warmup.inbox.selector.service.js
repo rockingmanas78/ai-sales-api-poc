@@ -38,23 +38,27 @@ export async function pickEligibleWarmupInbox({ startOfDayUtc }) {
 
   if (!candidates.length) return null;
 
-  // Prefer inboxes with auto-engagement enabled
-  const sortedCandidates = [
-    ...candidates.filter((c) => c.autoEngagementEnabled),
-    ...candidates.filter((c) => !c.autoEngagementEnabled),
-  ];
+// 1. Separate into priority tiers
+  const autoEngage = candidates.filter((c) => c.autoEngagementEnabled);
+  const manual = candidates.filter((c) => !c.autoEngagementEnabled);
+
+  // 2. SHUFFLE function (Fisher-Yates or simple sort)
+  const shuffle = (array) => array.sort(() => Math.random() - 0.5);
+
+  // 3. Create a randomized list, still preferring auto-engage generally
+  const sortedCandidates = [...shuffle(autoEngage), ...shuffle(manual)];
 
   for (const candidate of sortedCandidates) {
     const normalizedEmail = safeLowercaseEmail(candidate.email);
 
     const sentCountToday = await countWarmupMessagesSentToInboxToday({
-      inboxEmail: normalizedEmail,
-      startOfDayUtc,
-    });
+       inboxEmail: normalizedEmail,
+       startOfDayUtc,
+     });
 
-    if (sentCountToday < (candidate.maxDailyVolume || 100)) {
-      return { ...candidate, email: normalizedEmail };
-    }
+     if (sentCountToday < (candidate.maxDailyVolume || 100)) {
+       return { ...candidate, email: normalizedEmail };
+     }
   }
 
   return null;
