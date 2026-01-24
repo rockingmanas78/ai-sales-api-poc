@@ -33,29 +33,30 @@ async function releaseSchedulerLock() {
    Helpers
 ===================================================== */
 
-function shouldAdjustDailyMax(profile) {
-  if (!profile.lastAdjustedAt) return true;
-  const last = new Date(profile.lastAdjustedAt);
-  const now = new Date();
+function shouldAdjustDailyMax(emailWarmupProfile) {
+  if (!emailWarmupProfile.lastAdjustedAt) return true;
+  const lastAdjustedAtDate = new Date(emailWarmupProfile.lastAdjustedAt);
+  const nowDate = new Date();
+
   return (
-    last.getUTCFullYear() !== now.getUTCFullYear() ||
-    last.getUTCMonth() !== now.getUTCMonth() ||
-    last.getUTCDate() !== now.getUTCDate()
+    lastAdjustedAtDate.getUTCFullYear() !== nowDate.getUTCFullYear() ||
+    lastAdjustedAtDate.getUTCMonth() !== nowDate.getUTCMonth() ||
+    lastAdjustedAtDate.getUTCDate() !== nowDate.getUTCDate()
   );
 }
 
-async function upsertDailyStat({ tenantId, emailIdentityId, dateUtc }) {
+async function upsertWarmupDailyStat({ tenantId, emailIdentityId, dateUtc }) {
   return prisma.warmupDailyStat.upsert({
     where: {
-      tenantId_emailIdentityId_date: { 
+      warmup_daily_profile_date_uq: {
         tenantId,
-        emailIdentityId: emailIdentityId, // Pass the actual Identity ID
+        emailIdentityId,
         date: dateUtc,
       },
     },
     create: {
       tenantId,
-      emailIdentityId: emailIdentityId,
+      emailIdentityId,
       date: dateUtc,
       plannedSends: 0,
       sentCount: 0,
@@ -69,7 +70,6 @@ async function upsertDailyStat({ tenantId, emailIdentityId, dateUtc }) {
   });
 }
 
-
 async function countWarmupDraftsCreatedToday({
   tenantId,
   fromEmail,
@@ -82,6 +82,37 @@ async function countWarmupDraftsCreatedToday({
       createdAt: { gte: startOfDayUtc },
       from: { has: fromEmail },
       providerMessageId: null, // drafts only
+    },
+  });
+}
+
+/**
+ * Upsert and increment WarmupInboxDailyCounter.planned for a given inbox/day.
+ * Must run inside transaction.
+ */
+async function incrementWarmupInboxPlannedCounter({
+  transactionClient,
+  warmupInboxId,
+  dateUtc,
+  tenantId,
+}) {
+  await transactionClient.warmupInboxDailyCounter.upsert({
+    where: {
+      warmup_inbox_date_uq: {
+        warmup_inbox_id: warmupInboxId,
+        date: dateUtc,
+      },
+    },
+    create: {
+      warmup_inbox_id: warmupInboxId,
+      date: dateUtc,
+      planned: 1,
+      sent: 0,
+      tenant_id: tenantId || null,
+    },
+    update: {
+      planned: { increment: 1 },
+      ...(tenantId ? { tenant_id: tenantId } : {}),
     },
   });
 }
@@ -117,58 +148,62 @@ export async function runWarmupSchedulerTick() {
 
     let totalDraftsCreated = 0;
 
-    for (const profile of activeProfiles) {
+    for (const emailWarmupProfile of activeProfiles) {
+      const emailIdentityRow = emailWarmupProfile.EmailIdentity;
+
       if (
-        !profile.EmailIdentity ||
-        !["Success", "Verified"].includes(
-          profile.EmailIdentity.verificationStatus
-        )
+        !emailIdentityRow ||
+        !["Success", "Verified"].includes(emailIdentityRow.verificationStatus)
       ) {
         continue;
       }
 
-      const tenantId = profile.tenantId;
-      const fromEmail = safeLowercaseEmail(
-        profile.EmailIdentity.emailAddress
-      );
+      const tenantId = emailWarmupProfile.tenantId;
+      const profileId = emailWarmupProfile.id;
+      const fromEmail = safeLowercaseEmail(emailIdentityRow.emailAddress);
 
       /* Adjust daily max */
-      if (profile.mode === "AUTO" && shouldAdjustDailyMax(profile)) {
-          const nextDailyMax = await computeNextDailyMax(profile);
-          
-          await prisma.emailWarmupProfile.update({
-            where: { id: profile.id },
-            data: { 
-              currentDailyMax: nextDailyMax,
-              lastAdjustedAt: new Date()
-            }
-          });
-          profile.currentDailyMax = nextDailyMax;
+      if (emailWarmupProfile.mode === "AUTO" && shouldAdjustDailyMax(emailWarmupProfile)) {
+        const nextDailyMax = await computeNextDailyMax(emailWarmupProfile);
+
+        await prisma.emailWarmupProfile.update({
+          where: { id: emailWarmupProfile.id },
+          data: {
+            currentDailyMax: nextDailyMax,
+            lastAdjustedAt: new Date(),
+          },
+        });
+
+        emailWarmupProfile.currentDailyMax = nextDailyMax;
       }
 
-      const dailyCap = profile.currentDailyMax;
+      const dailyCap = Number(emailWarmupProfile.currentDailyMax || 0);
       if (dailyCap <= 0) continue;
 
-      const dailyStat = await upsertDailyStat({
+      const warmupDailyStatRow = await upsertWarmupDailyStat({
         tenantId,
-        emailIdentityId: profile.EmailIdentity.id,
+        emailIdentityId: emailIdentityRow.id,
         dateUtc: startOfTodayUtc,
       });
 
-      const alreadyDrafted = await countWarmupDraftsCreatedToday({
+      const alreadyDraftedCount = await countWarmupDraftsCreatedToday({
         tenantId,
         fromEmail,
         startOfDayUtc: startOfTodayUtc,
       });
 
-      const remaining = Math.max(0, dailyCap - alreadyDrafted);
-      if (!remaining) continue;
+      const remainingDraftsToCreate = Math.max(0, dailyCap - alreadyDraftedCount);
+      if (!remainingDraftsToCreate) continue;
 
-      for (let i = 0; i < remaining; i++) {
-        const warmupInbox = await pickEligibleWarmupInbox({
+      for (let draftIndex = 0; draftIndex < remainingDraftsToCreate; draftIndex++) {
+        // ✅ NEW: profile-scoped selection via WarmupProfileInbox
+        const selectedWarmupInbox = await pickEligibleWarmupInbox({
+          tenantId,
+          profileId,
           startOfDayUtc: startOfTodayUtc,
         });
-        if (!warmupInbox) break;
+
+        if (!selectedWarmupInbox) break;
 
         const warmupUuid = generateWarmupThreadKey();
         const warmupToken = buildWarmupToken({
@@ -181,53 +216,61 @@ export async function runWarmupSchedulerTick() {
           throw new Error("WARMUP_REPLY_DOMAIN not configured");
         }
 
-        const replyTo = buildWarmupReplyToAddress({
+        const replyToAddress = buildWarmupReplyToAddress({
           warmupToken,
           replyDomain,
         });
 
-        const seed = crypto.randomInt(0, 10_000);
-        const subject = pickWarmupSubject(seed);
-        const html = pickWarmupHtmlBody({
-          randomIndex: seed,
+        const seedValue = crypto.randomInt(0, 10_000);
+        const emailSubject = pickWarmupSubject(seedValue);
+        const htmlBody = pickWarmupHtmlBody({
+          randomIndex: seedValue,
           senderEmail: fromEmail,
-          recipientEmail: warmupInbox.email,
+          recipientEmail: selectedWarmupInbox.email,
         });
 
-        await prisma.$transaction(async (tx) => {
-          const thread = await tx.warmupThread.create({
+        await prisma.$transaction(async (transactionClient) => {
+          const createdThread = await transactionClient.warmupThread.create({
             data: {
               tenantId,
               threadKey: warmupToken,
-              profileId: profile.id,
-              inboxId: warmupInbox.id,
-              subject,
-              participants: [fromEmail, warmupInbox.email],
+              profileId: emailWarmupProfile.id,
+              inboxId: selectedWarmupInbox.id,
+              subject: emailSubject,
+              participants: [fromEmail, selectedWarmupInbox.email],
             },
           });
 
-          await tx.warmupMessage.create({
+          await transactionClient.warmupMessage.create({
             data: {
               tenantId,
-              threadId: thread.id,
+              threadId: createdThread.id,
               direction: "OUTBOUND",
-              subject,
+              subject: emailSubject,
               from: [fromEmail],
-              to: [warmupInbox.email],
-              html,
+              to: [selectedWarmupInbox.email],
+              html: htmlBody,
               headers: {
-                "Reply-To": replyTo,
+                "Reply-To": replyToAddress,
                 "X-SF-Warmup": "1",
               },
               warmupMarker: warmupToken,
-              configurationSet:
-                process.env.SES_WARMUP_CONFIGURATION_SET,
+              configurationSet: process.env.SES_WARMUP_CONFIGURATION_SET,
             },
           });
 
-          await tx.warmupDailyStat.update({
-            where: { id: dailyStat.id },
+          // increment profile daily planned
+          await transactionClient.warmupDailyStat.update({
+            where: { id: warmupDailyStatRow.id },
             data: { plannedSends: { increment: 1 } },
+          });
+
+          // ✅ NEW: increment inbox daily planned counter
+          await incrementWarmupInboxPlannedCounter({
+            transactionClient,
+            warmupInboxId: selectedWarmupInbox.id,
+            dateUtc: startOfTodayUtc,
+            tenantId,
           });
         });
 
@@ -241,84 +284,332 @@ export async function runWarmupSchedulerTick() {
   }
 }
 
-function utcDateOnlyNDaysAgo(n) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - n);
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+function utcDateOnlyNDaysAgo(numberOfDays) {
+  const dateValue = new Date();
+  dateValue.setUTCDate(dateValue.getUTCDate() - numberOfDays);
+  return new Date(Date.UTC(dateValue.getUTCFullYear(), dateValue.getUTCMonth(), dateValue.getUTCDate()));
 }
+
 /**
- * INTELLIGENT RAMP-UP
- * Only increase volume if the profile is healthy.
+ * SMART RAMP-UP LOGIC
  */
-/* =====================================================
-   SMART RAMP-UP LOGIC
-===================================================== */
-async function computeNextDailyMax(profile) {
-  const currentMax = profile.currentDailyMax;
-  const targetMax = profile.targetDailyMax;
-  const step = profile.incrementStep ?? 3;
+async function computeNextDailyMax(emailWarmupProfile) {
+  const currentMax = Number(emailWarmupProfile.currentDailyMax || 0);
+  const targetMax = Number(emailWarmupProfile.targetDailyMax || 0);
+  const incrementStep = Number(emailWarmupProfile.incrementStep ?? 3);
 
   if (currentMax >= targetMax) return targetMax;
 
-  // Check yesterday stats
-  const yesterday = utcDateOnlyNDaysAgo(1);
+  const yesterdayDate = utcDateOnlyNDaysAgo(1);
 
-  const stats = await prisma.warmupDailyStat.findFirst({
+  const yesterdayStats = await prisma.warmupDailyStat.findFirst({
     where: {
-      tenantId: profile.tenantId,
-      emailIdentityId: profile.emailIdentityId,
-      date: yesterday,
+      tenantId: emailWarmupProfile.tenantId,
+      emailIdentityId: emailWarmupProfile.emailIdentityId,
+      date: yesterdayDate,
     },
   });
 
-  // If enough volume and bounce rate too high, hold
-  if (stats && stats.sentCount >= 10) {
-    const bounceRate = stats.bounceCount / Math.max(1, stats.sentCount);
+  if (yesterdayStats && Number(yesterdayStats.sentCount || 0) >= 10) {
+    const bounceRate =
+      Number(yesterdayStats.bounceCount || 0) / Math.max(1, Number(yesterdayStats.sentCount || 0));
+
     if (bounceRate > 0.05) {
       console.warn(
-        `[Warmup] High bounce rate ${bounceRate.toFixed(3)} for profile=${profile.id}. Holding daily max at ${currentMax}.`
+        `[Warmup] High bounce rate ${bounceRate.toFixed(3)} for profile=${emailWarmupProfile.id}. Holding daily max at ${currentMax}.`
       );
       return currentMax;
     }
   }
 
-  return Math.min(currentMax + step, targetMax);
+  return Math.min(currentMax + incrementStep, targetMax);
 }
+
+
+
+// import { PrismaClient } from "@prisma/client";
+// import crypto from "crypto";
+// import {
+//   getStartOfTodayUtcDateOnly,
+//   generateWarmupThreadKey,
+//   buildWarmupToken,
+//   buildWarmupReplyToAddress,
+//   safeLowercaseEmail,
+// } from "./warmup.utils.service.js";
+// import { pickEligibleWarmupInbox } from "./warmup.inbox.selector.service.js";
+// import { pickWarmupSubject, pickWarmupHtmlBody } from "./warmup.content.service.js";
+
+// const prisma = new PrismaClient();
+
+// /* =====================================================
+//    Advisory lock (prevents parallel schedulers)
+// ===================================================== */
+// async function tryAcquireSchedulerLock() {
+//   const lockKey = 910022;
+//   const result =
+//     await prisma.$queryRaw`SELECT pg_try_advisory_lock(${lockKey}) AS acquired`;
+//   return Boolean(result?.[0]?.acquired);
+// }
+
+// async function releaseSchedulerLock() {
+//   const lockKey = 910022;
+//   try {
+//     await prisma.$queryRaw`SELECT pg_advisory_unlock(${lockKey})`;
+//   } catch {}
+// }
+
+// /* =====================================================
+//    Helpers
+// ===================================================== */
+
+// function shouldAdjustDailyMax(profile) {
+//   if (!profile.lastAdjustedAt) return true;
+//   const last = new Date(profile.lastAdjustedAt);
+//   const now = new Date();
+//   return (
+//     last.getUTCFullYear() !== now.getUTCFullYear() ||
+//     last.getUTCMonth() !== now.getUTCMonth() ||
+//     last.getUTCDate() !== now.getUTCDate()
+//   );
+// }
+
+// async function upsertDailyStat({ tenantId, emailIdentityId, dateUtc }) {
+//   return prisma.warmupDailyStat.upsert({
+//     where: {
+//       warmup_daily_profile_date_uq: { 
+//         tenantId,
+//         emailIdentityId: emailIdentityId, // Pass the actual Identity ID
+//         date: dateUtc,
+//       },
+//     },
+//     create: {
+//       tenantId,
+//       emailIdentityId: emailIdentityId,
+//       date: dateUtc,
+//       plannedSends: 0,
+//       sentCount: 0,
+//       openCount: 0,
+//       replyCount: 0,
+//       bounceCount: 0,
+//       complaintCount: 0,
+//       spamFolderCount: 0,
+//     },
+//     update: {},
+//   });
+// }
+
+
+// async function countWarmupDraftsCreatedToday({
+//   tenantId,
+//   fromEmail,
+//   startOfDayUtc,
+// }) {
+//   return prisma.warmupMessage.count({
+//     where: {
+//       tenantId,
+//       direction: "OUTBOUND",
+//       createdAt: { gte: startOfDayUtc },
+//       from: { has: fromEmail },
+//       providerMessageId: null, // drafts only
+//     },
+//   });
+// }
+
+// /* =====================================================
+//    MAIN SCHEDULER
+// ===================================================== */
+
+// export async function runWarmupSchedulerTick() {
+//   const acquired = await tryAcquireSchedulerLock();
+//   if (!acquired) {
+//     return { skipped: true, reason: "scheduler lock not acquired" };
+//   }
+
+//   const startOfTodayUtc = getStartOfTodayUtcDateOnly();
+
+//   try {
+//     const activeProfiles = await prisma.emailWarmupProfile.findMany({
+//       where: {
+//         status: "ACTIVE",
+//         mode: { in: ["AUTO"] },
+//       },
+//       include: {
+//         EmailIdentity: {
+//           select: {
+//             id: true,
+//             emailAddress: true,
+//             verificationStatus: true,
+//           },
+//         },
+//       },
+//     });
+
+//     let totalDraftsCreated = 0;
+
+//     for (const profile of activeProfiles) {
+//       if (
+//         !profile.EmailIdentity ||
+//         !["Success", "Verified"].includes(
+//           profile.EmailIdentity.verificationStatus
+//         )
+//       ) {
+//         continue;
+//       }
+
+//       const tenantId = profile.tenantId;
+//       const fromEmail = safeLowercaseEmail(
+//         profile.EmailIdentity.emailAddress
+//       );
+
+//       /* Adjust daily max */
+//       if (profile.mode === "AUTO" && shouldAdjustDailyMax(profile)) {
+//           const nextDailyMax = await computeNextDailyMax(profile);
+          
+//           await prisma.emailWarmupProfile.update({
+//             where: { id: profile.id },
+//             data: { 
+//               currentDailyMax: nextDailyMax,
+//               lastAdjustedAt: new Date()
+//             }
+//           });
+//           profile.currentDailyMax = nextDailyMax;
+//       }
+
+//       const dailyCap = profile.currentDailyMax;
+//       if (dailyCap <= 0) continue;
+
+//       const dailyStat = await upsertDailyStat({
+//         tenantId,
+//         emailIdentityId: profile.EmailIdentity.id,
+//         dateUtc: startOfTodayUtc,
+//       });
+
+//       const alreadyDrafted = await countWarmupDraftsCreatedToday({
+//         tenantId,
+//         fromEmail,
+//         startOfDayUtc: startOfTodayUtc,
+//       });
+
+//       const remaining = Math.max(0, dailyCap - alreadyDrafted);
+//       if (!remaining) continue;
+
+//       for (let i = 0; i < remaining; i++) {
+//         const warmupInbox = await pickEligibleWarmupInbox({
+//           startOfDayUtc: startOfTodayUtc,
+//         });
+//         if (!warmupInbox) break;
+
+//         const warmupUuid = generateWarmupThreadKey();
+//         const warmupToken = buildWarmupToken({
+//           tenantId,
+//           warmupUuid,
+//         });
+
+//         const replyDomain = process.env.WARMUP_REPLY_DOMAIN;
+//         if (!replyDomain) {
+//           throw new Error("WARMUP_REPLY_DOMAIN not configured");
+//         }
+
+//         const replyTo = buildWarmupReplyToAddress({
+//           warmupToken,
+//           replyDomain,
+//         });
+
+//         const seed = crypto.randomInt(0, 10_000);
+//         const subject = pickWarmupSubject(seed);
+//         const html = pickWarmupHtmlBody({
+//           randomIndex: seed,
+//           senderEmail: fromEmail,
+//           recipientEmail: warmupInbox.email,
+//         });
+
+//         await prisma.$transaction(async (tx) => {
+//           const thread = await tx.warmupThread.create({
+//             data: {
+//               tenantId,
+//               threadKey: warmupToken,
+//               profileId: profile.id,
+//               inboxId: warmupInbox.id,
+//               subject,
+//               participants: [fromEmail, warmupInbox.email],
+//             },
+//           });
+
+//           await tx.warmupMessage.create({
+//             data: {
+//               tenantId,
+//               threadId: thread.id,
+//               direction: "OUTBOUND",
+//               subject,
+//               from: [fromEmail],
+//               to: [warmupInbox.email],
+//               html,
+//               headers: {
+//                 "Reply-To": replyTo,
+//                 "X-SF-Warmup": "1",
+//               },
+//               warmupMarker: warmupToken,
+//               configurationSet:
+//                 process.env.SES_WARMUP_CONFIGURATION_SET,
+//             },
+//           });
+
+//           await tx.warmupDailyStat.update({
+//             where: { id: dailyStat.id },
+//             data: { plannedSends: { increment: 1 } },
+//           });
+//         });
+
+//         totalDraftsCreated += 1;
+//       }
+//     }
+
+//     return { skipped: false, totalDraftsCreated };
+//   } finally {
+//     await releaseSchedulerLock();
+//   }
+// }
+
+// function utcDateOnlyNDaysAgo(n) {
+//   const d = new Date();
+//   d.setUTCDate(d.getUTCDate() - n);
+//   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+// }
+// /**
+//  * INTELLIGENT RAMP-UP
+//  * Only increase volume if the profile is healthy.
+//  */
+// /* =====================================================
+//    SMART RAMP-UP LOGIC
+// ===================================================== */
 // async function computeNextDailyMax(profile) {
 //   const currentMax = profile.currentDailyMax;
 //   const targetMax = profile.targetDailyMax;
-//   const step = profile.incrementStep || 2; // Default to 2 if missing
+//   const step = profile.incrementStep ?? 3;
 
-//   // If we already reached the target, hold steady
 //   if (currentMax >= targetMax) return targetMax;
 
-//   // 1. Safety Check: Look at yesterday's stats (Prevent ramping if bouncing)
-//   const yesterday = new Date();
-//   yesterday.setDate(yesterday.getDate() - 1);
-//   const yesterdayKey = new Date(Date.UTC(yesterday.getUTCFullYear(), yesterday.getUTCMonth(), yesterday.getUTCDate()));
+//   // Check yesterday stats
+//   const yesterday = utcDateOnlyNDaysAgo(1);
 
-//   const stats = await prisma.warmupDailyStat.findUnique({
+//   const stats = await prisma.warmupDailyStat.findFirst({
 //     where: {
-//       warmup_daily_profile_date_uq: {
-//         tenantId: profile.tenantId,
-//         profileId: profile.id,
-//         date: yesterdayKey
-//       }
-//     }
+//       tenantId: profile.tenantId,
+//       emailIdentityId: profile.emailIdentityId,
+//       date: yesterday,
+//     },
 //   });
 
-//   // If bounce rate > 5%, do not increase volume
-//   if (stats && stats.sentCount > 10) {
-//     const bounceRate = stats.bounceCount / stats.sentCount;
+//   // If enough volume and bounce rate too high, hold
+//   if (stats && stats.sentCount >= 10) {
+//     const bounceRate = stats.bounceCount / Math.max(1, stats.sentCount);
 //     if (bounceRate > 0.05) {
-//       console.warn(`[Warmup] High bounce rate (${bounceRate.toFixed(2)}) for ${profile.id}. Pausing ramp-up.`);
-//       return currentMax; 
+//       console.warn(
+//         `[Warmup] High bounce rate ${bounceRate.toFixed(3)} for profile=${profile.id}. Holding daily max at ${currentMax}.`
+//       );
+//       return currentMax;
 //     }
 //   }
 
-//   // 2. Apply the user-defined step
-//   const nextMax = currentMax + step;
-
-//   // 3. Cap at target
-//   return Math.min(nextMax, targetMax);
+//   return Math.min(currentMax + step, targetMax);
 // }

@@ -133,7 +133,7 @@ export async function runWarmupSenderTick() {
 
         await prisma.warmupDailyStat.upsert({
           where: {
-            tenantId_emailIdentityId_date: {
+            warmup_daily_profile_date_uq: {
               tenantId,
               emailIdentityId,
               date: todayUtcDateOnly,

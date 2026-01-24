@@ -796,27 +796,29 @@ model EmailVerification {
 }
 
 model EmailWarmupProfile {
-  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId         String
-  emailIdentityId  String         @unique
-  mode             WarmupMode     @default(AUTO)
-  status           WarmupStatus   @default(ACTIVE)
-  startDate        DateTime       @default(now()) @db.Timestamptz(6)
-  targetDailyMax   Int            @default(50)
-  currentDailyMax  Int            @default(5)
-  lastAdjustedAt   DateTime?      @db.Timestamptz(6)
-  providerHint     String?
-  notes            String?
-  createdAt        DateTime       @default(now()) @db.Timestamptz(6)
-  updatedAt        DateTime       @default(now()) @db.Timestamptz(6)
-  incrementStep    Int            @default(3)
-  rampUpDays       Int            @default(15)
-  randomizeSending Boolean        @default(true)
-  startDailyVolume Int            @default(10)
-  timezone         String         @default("UTC")
-  EmailIdentity    EmailIdentity  @relation(fields: [emailIdentityId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_warmup_profile_identity")
-  Tenant           Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_warmup_profile_tenant")
-  WarmupThread     WarmupThread[]
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String
+  emailIdentityId    String               @unique
+  mode               WarmupMode           @default(AUTO)
+  status             WarmupStatus         @default(ACTIVE)
+  startDate          DateTime             @default(now()) @db.Timestamptz(6)
+  targetDailyMax     Int                  @default(50)
+  currentDailyMax    Int                  @default(5)
+  lastAdjustedAt     DateTime?            @db.Timestamptz(6)
+  providerHint       String?
+  notes              String?
+  createdAt          DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime             @default(now()) @db.Timestamptz(6)
+  incrementStep      Int                  @default(3)
+  rampUpDays         Int                  @default(15)
+  randomizeSending   Boolean              @default(true)
+  startDailyVolume   Int                  @default(10)
+  timezone           String               @default("UTC")
+  rr_cursor          Int                  @default(0)
+  EmailIdentity      EmailIdentity        @relation(fields: [emailIdentityId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_warmup_profile_identity")
+  Tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_warmup_profile_tenant")
+  WarmupProfileInbox WarmupProfileInbox[]
+  WarmupThread       WarmupThread[]
 
   @@index([tenantId, status], map: "idx_warmup_profile_tenant_status")
 }
@@ -843,21 +845,23 @@ model WarmupDailyStat {
 }
 
 model WarmupInbox {
-  id                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email                 String             @unique
-  provider              String?
-  domain                String
-  label                 String?
-  ownerTenantId         String?
-  autoEngagementEnabled Boolean            @default(true)
-  status                WarmupInboxStatus  @default(ACTIVE)
-  maxDailyVolume        Int                @default(100)
-  metadata              Json               @default("{}")
-  createdAt             DateTime           @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime           @default(now()) @db.Timestamptz(6)
-  Tenant                Tenant?            @relation(fields: [ownerTenantId], references: [id], onUpdate: NoAction, map: "fk_warmup_inbox_owner")
-  WarmupInboxEvent      WarmupInboxEvent[]
-  WarmupThread          WarmupThread[]
+  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                   String                    @unique
+  provider                String?
+  domain                  String
+  label                   String?
+  ownerTenantId           String?
+  autoEngagementEnabled   Boolean                   @default(true)
+  status                  WarmupInboxStatus         @default(ACTIVE)
+  maxDailyVolume          Int                       @default(100)
+  metadata                Json                      @default("{}")
+  createdAt               DateTime                  @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime                  @default(now()) @db.Timestamptz(6)
+  Tenant                  Tenant?                   @relation(fields: [ownerTenantId], references: [id], onUpdate: NoAction, map: "fk_warmup_inbox_owner")
+  WarmupInboxDailyCounter WarmupInboxDailyCounter[]
+  WarmupInboxEvent        WarmupInboxEvent[]
+  WarmupProfileInbox      WarmupProfileInbox[]
+  WarmupThread            WarmupThread[]
 }
 
 model WarmupInboxEvent {
@@ -935,6 +939,38 @@ model WarmupThread {
 
   @@unique([tenantId, threadKey], map: "warmupthread_tenant_threadkey_uq")
   @@index([tenantId, profileId, updatedAt], map: "idx_warmupthread_tenant_profile_time")
+}
+
+model WarmupProfileInbox {
+  id                 String                   @id(map: "warmup_profile_inbox_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id          String
+  profile_id         String                   @db.Uuid
+  warmup_inbox_id    String                   @db.Uuid
+  status             WarmupProfileInboxStatus @default(ACTIVE)
+  weight             Int                      @default(1)
+  created_at         DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime                 @default(now()) @db.Timestamptz(6)
+  WarmupInbox        WarmupInbox              @relation(fields: [warmup_inbox_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "warmup_profile_inbox_inbox_fk")
+  EmailWarmupProfile EmailWarmupProfile       @relation(fields: [profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "warmup_profile_inbox_profile_fk")
+
+  @@unique([tenant_id, profile_id, warmup_inbox_id], map: "warmup_profile_inbox_uq")
+  @@index([warmup_inbox_id], map: "idx_warmup_profile_inbox_inbox")
+  @@index([tenant_id, profile_id, status], map: "idx_warmup_profile_inbox_tenant_profile")
+}
+
+model WarmupInboxDailyCounter {
+  id              String      @id(map: "warmupinboxdailycounter_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  warmup_inbox_id String      @db.Uuid
+  date            DateTime    @db.Date
+  planned         Int         @default(0)
+  sent            Int         @default(0)
+  tenant_id       String?
+  created_at      DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime    @default(now()) @db.Timestamptz(6)
+  WarmupInbox     WarmupInbox @relation(fields: [warmup_inbox_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "warmupinboxdailycounter_warmup_inbox_id_fkey")
+
+  @@unique([warmup_inbox_id, date], map: "warmup_inbox_date_uq")
+  @@index([date], map: "warmup_inbox_date_idx")
 }
 
 enum AcquisitionChannel {
@@ -1176,4 +1212,10 @@ enum WarmupStatus {
   ACTIVE
   PAUSED
   COMPLETED
+}
+
+enum WarmupProfileInboxStatus {
+  ACTIVE
+  PAUSED
+  DISABLED
 }

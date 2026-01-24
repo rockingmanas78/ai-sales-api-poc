@@ -43,6 +43,7 @@ import warmupMessage from "./routes/warmup.message.routes.js"
 import  warmupThread  from "./routes/warmup.thread.routes.js";
 import warmupMessageEvent from "./routes/warmup.messageEvent.routes.js";
 import { startBulkEmailWorker, startCsvJobWorker, startWarmupSchedulerWorker, startWarmupSenderWorker } from "./jobs/jobWorkers.js";
+import warmupProfileInboxRoutes from "./routes/warmup.profileInbox.routes.js";
 
 const app = express();
 
@@ -129,6 +130,7 @@ app.use("/api/warmup/message",warmupMessage);
 app.use("/api/warmup/thread",warmupThread);
 app.use("/api/warmup/event",warmupMessageEvent);
 app.use("/api/email-verification", emailVerificationRouter);
+app.use("/api/warmup-profiles", warmupProfileInboxRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {
