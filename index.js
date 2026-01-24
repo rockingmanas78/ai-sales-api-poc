@@ -42,7 +42,7 @@ import warmWebhook from "./routes/warmup.webhook.routes.js";
 import warmupMessage from "./routes/warmup.message.routes.js"
 import  warmupThread  from "./routes/warmup.thread.routes.js";
 import warmupMessageEvent from "./routes/warmup.messageEvent.routes.js";
-import { startBulkEmailWorker, startCsvJobWorker } from "./jobs/jobWorkers.js";
+import { startBulkEmailWorker, startCsvJobWorker, startWarmupSchedulerWorker, startWarmupSenderWorker } from "./jobs/jobWorkers.js";
 
 const app = express();
 
@@ -62,6 +62,7 @@ app.use(
 );
 
 app.use("/api", snsRoutes);
+app.use("/api/warmup/webhook",warmWebhook);
 
 app.use(express.json());
 
@@ -124,7 +125,6 @@ app.use("/api/email-verification", emailVerificationRouter);
 app.use("/api/warmup/profile",warmupProfile)
 app.use("/api/warmup/inbox",warmupInbox);
 app.use("/api/warmup/scheduler",warmupScheduler);
-app.use("/api/warmup/webhook",warmWebhook);
 app.use("/api/warmup/message",warmupMessage);
 app.use("/api/warmup/thread",warmupThread);
 app.use("/api/warmup/event",warmupMessageEvent);
@@ -136,12 +136,18 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Internal Server Error" });
 });
 
-startBulkEmailWorker();
-startCsvJobWorker();
+// startBulkEmailWorker();
+// startCsvJobWorker();
 
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server runs on port ${PORT}`);
-  processNextBatch();
+  processNextBatch(); // Initial run
+  startBulkEmailWorker();
+  startCsvJobWorker();
+
+  // NEW: Start Self-Driving Warmup Engine
+  startWarmupSchedulerWorker();
+  startWarmupSenderWorker();
 });

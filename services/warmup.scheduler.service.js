@@ -44,12 +44,6 @@ function shouldAdjustDailyMax(profile) {
   );
 }
 
-function computeNextDailyMax({ currentDailyMax, targetDailyMax }) {
-  if (currentDailyMax >= targetDailyMax) return currentDailyMax;
-  const increased = Math.ceil(currentDailyMax * 1.1);
-  return Math.min(Math.max(increased, currentDailyMax + 1), targetDailyMax);
-}
-
 async function upsertDailyStat({ tenantId, emailIdentityId, dateUtc }) {
   return prisma.warmupDailyStat.upsert({
     where: {
@@ -108,7 +102,7 @@ export async function runWarmupSchedulerTick() {
     const activeProfiles = await prisma.emailWarmupProfile.findMany({
       where: {
         status: "ACTIVE",
-        mode: { in: ["AUTO", "MANUAL_ONLY"] },
+        mode: { in: ["AUTO"] },
       },
       include: {
         EmailIdentity: {
@@ -140,20 +134,16 @@ export async function runWarmupSchedulerTick() {
 
       /* Adjust daily max */
       if (profile.mode === "AUTO" && shouldAdjustDailyMax(profile)) {
-        const nextDailyMax = computeNextDailyMax({
-          currentDailyMax: profile.currentDailyMax,
-          targetDailyMax: profile.targetDailyMax,
-        });
-
-        await prisma.emailWarmupProfile.update({
-          where: { id: profile.id },
-          data: {
-            currentDailyMax: nextDailyMax,
-            lastAdjustedAt: new Date(),
-          },
-        });
-
-        profile.currentDailyMax = nextDailyMax;
+          const nextDailyMax = await computeNextDailyMax(profile);
+          
+          await prisma.emailWarmupProfile.update({
+            where: { id: profile.id },
+            data: { 
+              currentDailyMax: nextDailyMax,
+              lastAdjustedAt: new Date()
+            }
+          });
+          profile.currentDailyMax = nextDailyMax;
       }
 
       const dailyCap = profile.currentDailyMax;
@@ -250,3 +240,85 @@ export async function runWarmupSchedulerTick() {
     await releaseSchedulerLock();
   }
 }
+
+function utcDateOnlyNDaysAgo(n) {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - n);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+/**
+ * INTELLIGENT RAMP-UP
+ * Only increase volume if the profile is healthy.
+ */
+/* =====================================================
+   SMART RAMP-UP LOGIC
+===================================================== */
+async function computeNextDailyMax(profile) {
+  const currentMax = profile.currentDailyMax;
+  const targetMax = profile.targetDailyMax;
+  const step = profile.incrementStep ?? 3;
+
+  if (currentMax >= targetMax) return targetMax;
+
+  // Check yesterday stats
+  const yesterday = utcDateOnlyNDaysAgo(1);
+
+  const stats = await prisma.warmupDailyStat.findFirst({
+    where: {
+      tenantId: profile.tenantId,
+      emailIdentityId: profile.emailIdentityId,
+      date: yesterday,
+    },
+  });
+
+  // If enough volume and bounce rate too high, hold
+  if (stats && stats.sentCount >= 10) {
+    const bounceRate = stats.bounceCount / Math.max(1, stats.sentCount);
+    if (bounceRate > 0.05) {
+      console.warn(
+        `[Warmup] High bounce rate ${bounceRate.toFixed(3)} for profile=${profile.id}. Holding daily max at ${currentMax}.`
+      );
+      return currentMax;
+    }
+  }
+
+  return Math.min(currentMax + step, targetMax);
+}
+// async function computeNextDailyMax(profile) {
+//   const currentMax = profile.currentDailyMax;
+//   const targetMax = profile.targetDailyMax;
+//   const step = profile.incrementStep || 2; // Default to 2 if missing
+
+//   // If we already reached the target, hold steady
+//   if (currentMax >= targetMax) return targetMax;
+
+//   // 1. Safety Check: Look at yesterday's stats (Prevent ramping if bouncing)
+//   const yesterday = new Date();
+//   yesterday.setDate(yesterday.getDate() - 1);
+//   const yesterdayKey = new Date(Date.UTC(yesterday.getUTCFullYear(), yesterday.getUTCMonth(), yesterday.getUTCDate()));
+
+//   const stats = await prisma.warmupDailyStat.findUnique({
+//     where: {
+//       warmup_daily_profile_date_uq: {
+//         tenantId: profile.tenantId,
+//         profileId: profile.id,
+//         date: yesterdayKey
+//       }
+//     }
+//   });
+
+//   // If bounce rate > 5%, do not increase volume
+//   if (stats && stats.sentCount > 10) {
+//     const bounceRate = stats.bounceCount / stats.sentCount;
+//     if (bounceRate > 0.05) {
+//       console.warn(`[Warmup] High bounce rate (${bounceRate.toFixed(2)}) for ${profile.id}. Pausing ramp-up.`);
+//       return currentMax; 
+//     }
+//   }
+
+//   // 2. Apply the user-defined step
+//   const nextMax = currentMax + step;
+
+//   // 3. Cap at target
+//   return Math.min(nextMax, targetMax);
+// }

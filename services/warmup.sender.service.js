@@ -129,16 +129,37 @@ export async function runWarmupSenderTick() {
         });
 
         // 3️⃣ Update daily stats (IDENTITY-BASED ✅)
-        await tx.warmupDailyStat.updateMany({
+        // inside runWarmupSenderTick loop, before updateMany:
+
+        await prisma.warmupDailyStat.upsert({
           where: {
+            tenantId_emailIdentityId_date: {
+              tenantId,
+              emailIdentityId,
+              date: todayUtcDateOnly,
+            },
+          },
+          create: {
             tenantId,
             emailIdentityId,
             date: todayUtcDateOnly,
+            plannedSends: 0,
+            sentCount: 0,
+            openCount: 0,
+            replyCount: 0,
+            bounceCount: 0,
+            complaintCount: 0,
+            spamFolderCount: 0,
           },
-          data: {
-            sentCount: { increment: 1 },
-          },
+          update: {},
         });
+
+        // then do your updateMany / update:
+        await prisma.warmupDailyStat.updateMany({
+          where: { tenantId, emailIdentityId, date: todayUtcDateOnly },
+          data: { sentCount: { increment: 1 } },
+        });
+
       });
 
       sentCount += 1;

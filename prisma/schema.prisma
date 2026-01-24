@@ -796,28 +796,33 @@ model EmailVerification {
 }
 
 model EmailWarmupProfile {
-  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId        String
-  emailIdentityId String         @unique
-  mode            WarmupMode     @default(AUTO)
-  status          WarmupStatus   @default(ACTIVE)
-  startDate       DateTime       @default(now()) @db.Timestamptz(6)
-  targetDailyMax  Int            @default(50)
-  currentDailyMax Int            @default(5)
-  lastAdjustedAt  DateTime?      @db.Timestamptz(6)
-  providerHint    String?
-  notes           String?
-  createdAt       DateTime       @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime       @default(now()) @db.Timestamptz(6)
-  EmailIdentity   EmailIdentity  @relation(fields: [emailIdentityId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_warmup_profile_identity")
-  Tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_warmup_profile_tenant")
-  WarmupThread    WarmupThread[]
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String
+  emailIdentityId  String         @unique
+  mode             WarmupMode     @default(AUTO)
+  status           WarmupStatus   @default(ACTIVE)
+  startDate        DateTime       @default(now()) @db.Timestamptz(6)
+  targetDailyMax   Int            @default(50)
+  currentDailyMax  Int            @default(5)
+  lastAdjustedAt   DateTime?      @db.Timestamptz(6)
+  providerHint     String?
+  notes            String?
+  createdAt        DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime       @default(now()) @db.Timestamptz(6)
+  incrementStep    Int            @default(3)
+  rampUpDays       Int            @default(15)
+  randomizeSending Boolean        @default(true)
+  startDailyVolume Int            @default(10)
+  timezone         String         @default("UTC")
+  EmailIdentity    EmailIdentity  @relation(fields: [emailIdentityId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_warmup_profile_identity")
+  Tenant           Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_warmup_profile_tenant")
+  WarmupThread     WarmupThread[]
 
   @@index([tenantId, status], map: "idx_warmup_profile_tenant_status")
 }
 
 model WarmupDailyStat {
-  id               String        @id @default(uuid()) @db.Uuid
+  id              String        @id @default(uuid()) @db.Uuid
   tenantId        String
   emailIdentityId String
   date            DateTime      @db.Date

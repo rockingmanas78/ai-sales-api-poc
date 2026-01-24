@@ -112,16 +112,36 @@ export async function updateWarmupProfile(req, res, next) {
   try {
     const tenantId = req.user?.tenantId;
     const profileId = req.params.id;
-    const { mode, status, targetDailyMax, notes } = req.body;
+    const { 
+      mode, 
+      status, 
+      targetDailyMax, 
+      startDailyVolume,
+      rampUpDays,
+      timezone,
+      randomizeSending,
+      notes 
+    } = req.body;
 
     const existingProfile = await prisma.emailWarmupProfile.findFirst({
       where: { id: profileId, tenantId },
     });
 
     if (!existingProfile) {
-      return res.status(404).json({
-        error: "Warmup profile not found",
-      });
+      return res.status(404).json({ error: "Warmup profile not found" });
+    }
+
+    // Optional: Auto-calculate incrementStep if rampUpDays is provided
+    let newIncrementStep = existingProfile.incrementStep;
+    
+    // If user changes target or start volume, recalculate step to fit the ramp-up days
+    // Formula: (Target - Start) / Days = Daily Step
+    const tMax = targetDailyMax !== undefined ? Number(targetDailyMax) : existingProfile.targetDailyMax;
+    const sVol = startDailyVolume !== undefined ? Number(startDailyVolume) : existingProfile.startDailyVolume;
+    const rDays = rampUpDays !== undefined ? Number(rampUpDays) : existingProfile.rampUpDays;
+    
+    if (rDays > 0) {
+      newIncrementStep = Math.max(1, Math.ceil((tMax - sVol) / rDays));
     }
 
     const updatedProfile = await prisma.emailWarmupProfile.update({
@@ -129,10 +149,16 @@ export async function updateWarmupProfile(req, res, next) {
       data: {
         ...(mode ? { mode: normalizeWarmupMode(mode) } : {}),
         ...(status ? { status: normalizeWarmupStatus(status) } : {}),
-        ...(Number.isFinite(Number(targetDailyMax)) &&
-        Number(targetDailyMax) > 0
-          ? { targetDailyMax: Number(targetDailyMax) }
-          : {}),
+        
+        // Number validations
+        ...(Number.isFinite(Number(targetDailyMax)) ? { targetDailyMax: Number(targetDailyMax) } : {}),
+        ...(Number.isFinite(Number(startDailyVolume)) ? { startDailyVolume: Number(startDailyVolume) } : {}),
+        ...(Number.isFinite(Number(rampUpDays)) ? { rampUpDays: Number(rampUpDays) } : {}),
+        
+        incrementStep: newIncrementStep,
+        
+        ...(timezone ? { timezone } : {}),
+        ...(randomizeSending !== undefined ? { randomizeSending: Boolean(randomizeSending) } : {}),
         ...(typeof notes === "string" ? { notes } : {}),
       },
     });

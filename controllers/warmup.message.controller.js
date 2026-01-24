@@ -57,17 +57,37 @@ export async function createWarmupMessage(req, res, next) {
 export async function listWarmupMessages(req, res, next) {
   try {
     const tenantId = req.user?.tenantId;
-    const { threadId, direction, limit = 50, offset = 0 } = req.query;
+    const { 
+      threadId, 
+      direction, 
+      emailIdentityId, // <-- NEW FILTER for specific profile activity
+      limit = 50, 
+      offset = 0 
+    } = req.query;
 
-    if (!tenantId) {
-      return res.status(400).json({ error: "tenantId is required" });
-    }
+    if (!tenantId) return res.status(400).json({ error: "tenantId is required" });
 
+    // Build Where Clause
     const where = {
       tenantId,
       ...(threadId ? { threadId } : {}),
       ...(direction ? { direction } : {}),
     };
+
+    // If filtering by specific Identity (Profile), we need to find the related threads
+    if (emailIdentityId) {
+       // Find the profile first
+       const profile = await prisma.emailWarmupProfile.findUnique({
+         where: { emailIdentityId },
+         select: { id: true }
+       });
+       
+       if (profile) {
+         where.WarmupThread = {
+           profileId: profile.id
+         };
+       }
+    }
 
     const messages = await prisma.warmupMessage.findMany({
       where,
@@ -76,12 +96,26 @@ export async function listWarmupMessages(req, res, next) {
       skip: Number(offset),
       include: {
         WarmupThread: {
-          select: { id: true, threadKey: true },
+          select: { 
+            id: true, 
+            threadKey: true,
+            // Include Inbox to get Provider Info for UI
+            WarmupInbox: {
+              select: {
+                id: true,
+                email: true,
+                provider: true // <--- UI needs this (Google/Outlook)
+              }
+            }
+          },
         },
-        WarmupMessageEvent: true,
+        WarmupMessageEvent: {
+           select: { eventType: true, occurredAt: true } // For status bubbles
+        }, 
       },
     });
 
+    // Helper to format for UI if needed, or send raw
     return res.json({ messages });
   } catch (error) {
     next(error);
