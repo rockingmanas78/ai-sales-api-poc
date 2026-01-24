@@ -1,0 +1,24 @@
+name: CI/CD Deployment
+
+on:
+  push:
+    branches: [ main ] # Runs every time you push code to the main branch
+
+jobs:
+  deploy:
+    runs-on: self-hosted # Tells GitHub to use your EC2 runner
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          cd /home/ubuntu/app
+          npm install
+
+      - name: Deploy with PM2
+        run: |
+          cd /home/ubuntu/app
+          git pull origin main
+          pm2 restart sales-api --update-env
