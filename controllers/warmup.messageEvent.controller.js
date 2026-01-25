@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { buildDeliverabilityReportForWarmupProfile } from '../services/warmup.messageEvents.service.js';
 
 /**
  * GET /warmup/message-events
@@ -117,5 +118,34 @@ export async function getWarmupMessageEventById(req, res, next) {
     return res.json({ event });
   } catch (error) {
     next(error);
+  }
+}
+
+/**
+ * GET /api/warmup/profiles/:warmupProfileId/deliverability-report
+ */
+export async function getDeliverabilityReportForWarmupProfile(req, res) {
+  try {
+    const warmupProfileId = req.params.warmupProfileId;
+
+    // If you have auth middleware, prefer req.user.tenantId
+    const tenantId = req.user?.tenantId || req.query?.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ message: "tenantId is required." });
+    }
+    if (!warmupProfileId) {
+      return res.status(400).json({ message: "warmupProfileId is required." });
+    }
+
+    const report = await buildDeliverabilityReportForWarmupProfile({
+      tenantId: String(tenantId),
+      warmupProfileId: String(warmupProfileId),
+    });
+
+    return res.status(200).json(report);
+  } catch (error) {
+    const message = error?.message || "Failed to build deliverability report.";
+    return res.status(500).json({ message });
   }
 }

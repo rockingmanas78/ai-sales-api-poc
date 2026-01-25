@@ -4,7 +4,9 @@ import {
   createWarmupInbox,
   updateWarmupInbox,
   onboardWarmupInbox,
+  getWarmupInboxAvailability,
 } from "../controllers/warmup.inbox.controller.js";
+import verifyToken from "../middlewares/verifyToken.js";
 
 const router = express.Router();
 
@@ -13,6 +15,12 @@ const router = express.Router();
  * List active warmup inboxes
  */
 router.get("/", listWarmupInboxes);
+
+/**
+ * NEW: availability (count only, no emails)
+ * GET /api/warmup/inbox/availability
+ */
+router.get("/availability", verifyToken(), getWarmupInboxAvailability);
 
 /** Do not use this, use onboard route instead
  * POST /api/warmup-inboxes

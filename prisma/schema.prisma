@@ -840,7 +840,7 @@ model WarmupDailyStat {
   EmailIdentity   EmailIdentity @relation(fields: [emailIdentityId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_warmup_daily_identity")
   Tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_warmup_daily_tenant")
 
-  @@unique([tenantId, emailIdentityId, date], map: "warmup_daily_profile_date_uq")
+  @@unique([tenantId, emailIdentityId, date], name: "warmup_daily_profile_date_uq", map: "warmup_daily_profile_date_uq")
   @@index([tenantId, date], map: "idx_warmup_daily_tenant_date")
 }
 
@@ -969,7 +969,7 @@ model WarmupInboxDailyCounter {
   updated_at      DateTime    @default(now()) @db.Timestamptz(6)
   WarmupInbox     WarmupInbox @relation(fields: [warmup_inbox_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "warmupinboxdailycounter_warmup_inbox_id_fkey")
 
-  @@unique([warmup_inbox_id, date], map: "warmup_inbox_date_uq")
+  @@unique([warmup_inbox_id, date], map: "warmup_inbox_id_date")
   @@index([date], map: "warmup_inbox_date_idx")
 }
 

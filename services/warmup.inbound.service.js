@@ -83,7 +83,7 @@ async function incrementWarmupInboxSentCounter({ warmupInboxId, tenantId }) {
 
   await prisma.warmupInboxDailyCounter.upsert({
     where: {
-      warmup_inbox_date_uq: {
+      warmup_inbox_id_date: {
         warmup_inbox_id: warmupInboxId,
         date: todayDateUtc,
       },

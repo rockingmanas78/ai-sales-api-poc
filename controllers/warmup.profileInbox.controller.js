@@ -300,3 +300,128 @@ export async function updateWarmupProfileInbox(req, res) {
     });
   }
 }
+
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (Number.isNaN(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
+function shuffleInPlace(array) {
+  for (let index = array.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const temp = array[index];
+    array[index] = array[swapIndex];
+    array[swapIndex] = temp;
+  }
+  return array;
+}
+
+/**
+ * POST /api/warmup-profiles/:profileId/inboxes/auto
+ * Body: { count: number }
+ *
+ * Auto-pick random N inboxes and connect to profile (REPLACE behavior).
+ */
+export async function autoAssignProfileInboxes(req, res) {
+  try {
+    const profileId = req.params.profileId;
+    if (!profileId) {
+      return res.status(400).json({ message: "profileId is required." });
+    }
+
+    const tenantId = req.user?.tenantId || req.query?.tenantId || req.body?.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ message: "tenantId is required." });
+    }
+
+    const requestedCount = parsePositiveInt(req.body?.count ?? req.query?.count, 0);
+    if (!requestedCount) {
+      return res.status(400).json({ message: "count must be a positive integer." });
+    }
+
+    // Ensure profile belongs to tenant
+    const warmupProfile = await prisma.emailWarmupProfile.findFirst({
+      where: { id: profileId, tenantId },
+      select: { id: true },
+    });
+
+    if (!warmupProfile) {
+      return res.status(404).json({ message: "Warmup profile not found for this tenant." });
+    }
+
+    // Candidate inboxes: ACTIVE + (global or owned by tenant)
+    const candidateInboxes = await prisma.warmupInbox.findMany({
+      where: {
+        status: "ACTIVE",
+        OR: [{ ownerTenantId: null }, { ownerTenantId: tenantId }],
+      },
+      select: { id: true },
+    });
+
+    if (!candidateInboxes.length) {
+      return res.status(400).json({ message: "No ACTIVE warmup inboxes available to assign." });
+    }
+
+    const selectedCount = Math.min(requestedCount, candidateInboxes.length);
+    const shuffled = shuffleInPlace([...candidateInboxes]);
+    const selectedInboxIds = shuffled.slice(0, selectedCount).map((row) => row.id);
+
+    await prisma.$transaction(async (transactionClient) => {
+      // Replace behavior: remove all existing mappings for this profile+tenant
+      await transactionClient.warmupProfileInbox.deleteMany({
+        where: {
+          tenant_id: tenantId,
+          profile_id: profileId,
+        },
+      });
+
+      // Create new mappings
+      await transactionClient.warmupProfileInbox.createMany({
+        data: selectedInboxIds.map((warmupInboxId) => ({
+          tenant_id: tenantId,
+          profile_id: profileId,
+          warmup_inbox_id: warmupInboxId,
+          status: "ACTIVE",
+          weight: 1,
+        })),
+      });
+    });
+
+    // Return mappings with inbox details (useful for frontend)
+    const mappings = await prisma.warmupProfileInbox.findMany({
+      where: {
+        tenant_id: tenantId,
+        profile_id: profileId,
+      },
+      orderBy: [{ created_at: "desc" }],
+      include: {
+        WarmupInbox: {
+          select: {
+            id: true,
+            email: true,
+            domain: true,
+            provider: true,
+            status: true,
+            label: true,
+            ownerTenantId: true,
+          },
+        },
+      },
+    });
+
+    return res.status(200).json({
+      message: "Profile inbox mappings updated.",
+      data: {
+        profileId,
+        assignedCount: mappings.length,
+        mappings,
+      },
+    });
+  } catch (error) {
+    // Keep error output simple for first launch
+    // eslint-disable-next-line no-console
+    console.error("autoAssignProfileInboxes error:", error);
+    return res.status(500).json({ message: "Failed to auto-assign inboxes." });
+  }
+}

@@ -3,6 +3,45 @@ import { registerWarmupSubdomainInSes } from "../services/warmup.dns.service.js"
 
 const prisma = new PrismaClient();
 
+function getTenantIdFromRequest(req) {
+  return req.user?.tenantId || req.body?.tenantId || req.query?.tenantId || null;
+}
+
+/**
+ * NEW: Count available inboxes (do not expose emails)
+ * GET /api/warmup/inbox/availability
+ */
+export async function getWarmupInboxAvailability(req, res) {
+  try {
+    const tenantId = getTenantIdFromRequest(req);
+
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        error: "tenantId is required",
+      });
+    }
+
+    const available = await prisma.warmupInbox.count({
+      where: {
+        status: "ACTIVE",
+        OR: [{ ownerTenantId: tenantId }, { ownerTenantId: null }],
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { available },
+    });
+  } catch (error) {
+    console.error("[getWarmupInboxAvailability] error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch warmup inbox availability",
+    });
+  }
+}
+
 /**
  * List active warmup inboxes
  */
@@ -41,7 +80,7 @@ export async function createWarmupInbox(req, res) {
   try {
     const { tenantId, email, provider, domain } = req.body;
 
-    const [local, rootDomain] = email.split('@');
+    const [local, rootDomain] = email.split("@");
     const warmupEmail = `${local}@warmup.${rootDomain}`;
 
     if (!tenantId || !email || !provider) {
@@ -56,7 +95,7 @@ export async function createWarmupInbox(req, res) {
         ownerTenantId: tenantId,
         email: warmupEmail,
         provider,
-        domain: `warmup.${rootDomain}`, // Tracking will now happen here
+        domain: `warmup.${rootDomain}`,
         status: "ACTIVE",
       },
     });
@@ -73,7 +112,6 @@ export async function createWarmupInbox(req, res) {
     });
   }
 }
-
 
 /**
  * Update warmup inbox
@@ -142,10 +180,7 @@ export async function onboardWarmupInbox(req, res) {
     const subdomain = `warmup.${rootDomain}`;
     const email = `${localPart}@${subdomain}`;
 
-    // 1. Transactional Block
     const result = await prisma.$transaction(async (tx) => {
-      
-      // 2. Check for existing domain inside the transaction
       let domainIdentity = await tx.domainIdentity.findFirst({
         where: { domainName: subdomain, tenantId },
       });
@@ -153,13 +188,9 @@ export async function onboardWarmupInbox(req, res) {
       let dnsInstructions = [];
 
       if (!domainIdentity) {
-        // 3. Call SES Service (External API call)
-        // Note: External API calls can't be "rolled back" by SQL, 
-        // but the DB record creation will be.
         const sesResult = await registerWarmupSubdomainInSes(subdomain);
         dnsInstructions = sesResult.dnsRecords;
 
-        // 4. Create DomainIdentity using transaction client 'tx'
         domainIdentity = await tx.domainIdentity.create({
           data: {
             tenantId,
@@ -173,12 +204,11 @@ export async function onboardWarmupInbox(req, res) {
         dnsInstructions = domainIdentity.dkimRecords;
       }
 
-      // 5. Upsert WarmupInbox using transaction client 'tx'
       const inbox = await tx.warmupInbox.upsert({
         where: { email },
         update: { status: "ACTIVE" },
         create: {
-          ownerTenantId: tenantId, // Using the correct schema field name
+          ownerTenantId: tenantId,
           email,
           domain: subdomain,
           provider: "AWS_SES",
@@ -190,23 +220,20 @@ export async function onboardWarmupInbox(req, res) {
       return { inbox, domainIdentity, dnsInstructions };
     });
 
-    // If we reach here, everything succeeded and was committed
     return res.status(201).json({
       success: true,
       message: "Warmup Inbox & Subdomain initialized successfully.",
       data: {
         inbox: result.inbox,
         subdomain: result.domainIdentity,
-        dnsRecords: result.dnsInstructions 
+        dnsRecords: result.dnsInstructions,
       },
     });
-
   } catch (error) {
-    // If any step inside the transaction fails, Prisma automatically rolls back
     console.error("[onboardWarmupInbox] Transaction failed:", error);
-    return res.status(500).json({ 
-      success: false, 
-      error: error.message || "An error occurred during onboarding." 
+    return res.status(500).json({
+      success: false,
+      error: error.message || "An error occurred during onboarding.",
     });
   }
 }

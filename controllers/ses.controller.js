@@ -166,7 +166,7 @@ export async function listIdentities(req, res, next) {
     const domains = await prisma.domainIdentity.findMany({
       where: { tenantId: req.query.tenantId, deletedAt: null },
       include: {
-        emailIdentities: {
+        EmailIdentity: {
           where: { deletedAt: null },
           select: {
             id: true,
