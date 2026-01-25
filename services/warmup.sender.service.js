@@ -97,6 +97,8 @@ export async function runWarmupSenderTick() {
         ],
       });
 
+      console.log("Send email response", sendResponse);
+
       const providerMessageId = sendResponse?.MessageId;
       if (!providerMessageId) {
         throw new Error("SES did not return MessageId");
