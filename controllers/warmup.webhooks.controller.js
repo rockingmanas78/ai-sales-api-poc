@@ -27,6 +27,7 @@ function assertInternalSecret(req, expected) {
  */
 export async function warmupInboundWebhook(req, res) {
   try {
+    console.log("warmup inbounc mail received");
     if (!assertInternalSecret(req, process.env.WARMUP_INBOUND_WEBHOOK_SECRET)) {
       return res.status(401).json({ error: "unauthorized" });
     }
@@ -61,6 +62,8 @@ export async function warmupSesSnsEventsWebhook(req, res) {
       Buffer.isBuffer(req.body)
         ? req.body.toString("utf-8")
         : (typeof req.body === "string" ? req.body : JSON.stringify(req.body || ""));
+
+    console.log("warmup ses sns event triggered", rawBody);
 
     if (!rawBody) return res.status(400).send("Empty body");
 
