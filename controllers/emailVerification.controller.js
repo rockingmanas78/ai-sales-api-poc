@@ -153,6 +153,8 @@ export async function verifyLeadsBulkController(req, res, next) {
 
     const finalResults = [];
 
+    const updatePromises=[];
+
     for (const entry of emailMap) {
       if (!entry.email) {
         finalResults.push({
@@ -181,7 +183,7 @@ export async function verifyLeadsBulkController(req, res, next) {
         continue;
       }
 
-      await persistVerificationOnLead(entry.leadId, tenantId, vr);
+     updatePromises.push( persistVerificationOnLead(entry.leadId, tenantId, vr));
 
       finalResults.push({
         leadId: entry.leadId,
@@ -189,6 +191,7 @@ export async function verifyLeadsBulkController(req, res, next) {
         ...vr,
       });
     }
+    await Promise.all(updatePromises);
 
     const summary = finalResults.reduce(
       (acc, r) => {
