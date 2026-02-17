@@ -13,8 +13,21 @@ function getSenderMaxPerTick() {
   return Number.isFinite(value) && value > 0 ? value : 50;
 }
 
+function getDueDateFilter() {
+  // Optional: if you add sendAfterAt in schema, enable this.
+  // If not present in schema yet, keep it disabled by returning null.
+  return null;
+}
+
 /**
  * SENDS ONLY WarmupMessage drafts
+ *
+ * IMPORTANT FIXES:
+ * 1) Uses profileId (NOT emailIdentityId) for WarmupDailyStat unique key.
+ * 2) Does NOT overwrite providerMessageId if SES already returned one.
+ * 3) Does NOT create local SEND event or increment sentCount here
+ *    (avoid double counting; let SNS handler update stats).
+ * 4) Uses a single Prisma client (no connection storms).
  */
 export async function runWarmupSenderTick() {
   const configurationSetName = process.env.SES_WARMUP_CONFIGURATION_SET;
@@ -23,25 +36,21 @@ export async function runWarmupSenderTick() {
   }
 
   const maxToSendThisTick = getSenderMaxPerTick();
-  console.log("max tick", maxToSendThisTick);
+
+  const dueFilter = getDueDateFilter(); // enable later if you add sendAfterAt
 
   const draftMessages = await prisma.warmupMessage.findMany({
     where: {
       direction: "OUTBOUND",
       sentAt: null,
       providerMessageId: null,
+      ...(dueFilter ? dueFilter : {}),
     },
     include: {
       WarmupThread: {
         select: {
           tenantId: true,
-          EmailWarmupProfile: {
-            select: {
-              EmailIdentity: {
-                select: { id: true },
-              },
-            },
-          },
+          profileId: true,
         },
       },
     },
@@ -53,20 +62,21 @@ export async function runWarmupSenderTick() {
     return { sent: 0 };
   }
 
-  const todayUtcDateOnly = getStartOfTodayUtcDateOnly();
-  let sentCount = 0;
-
-  console.log("draft mssgs", draftMessages.length);
+  let sent = 0;
 
   for (const message of draftMessages) {
+    let providerMessageId = null;
+
     try {
       const tenantId = message.tenantId;
+      const profileId = message.WarmupThread?.profileId;
 
-      const emailIdentityId =
-        message.WarmupThread?.EmailWarmupProfile?.EmailIdentity?.id;
-
-      if (!tenantId || !emailIdentityId) {
-        console.warn("Skipping warmupMessage due to missing identity", message.id);
+      if (!tenantId || !profileId) {
+        console.warn("[warmupSender] skipping: missing tenantId/profileId", {
+          warmupMessageId: message.id,
+          tenantId,
+          profileId,
+        });
         continue;
       }
 
@@ -74,7 +84,11 @@ export async function runWarmupSenderTick() {
       const toEmail = safeLowercaseEmail(message.to?.[0] || "");
 
       if (!fromEmail || !toEmail) {
-        console.warn("Skipping warmupMessage due to invalid emails", message.id);
+        console.warn("[warmupSender] skipping: invalid emails", {
+          warmupMessageId: message.id,
+          fromEmail,
+          toEmail,
+        });
         continue;
       }
 
@@ -94,90 +108,60 @@ export async function runWarmupSenderTick() {
           { Name: "tenantId", Value: String(tenantId) },
           { Name: "isWarmup", Value: "1" },
           { Name: "warmupMarker", Value: String(message.warmupMarker || "0") },
+          { Name: "profileId", Value: String(profileId) }, // helpful for debugging/SNS
         ],
       });
 
-      console.log("Send email response", sendResponse);
-
-      const providerMessageId = sendResponse?.MessageId;
+      providerMessageId = sendResponse?.MessageId;
       if (!providerMessageId) {
         throw new Error("SES did not return MessageId");
       }
 
-      await prisma.$transaction(async (tx) => {
-        // 1️⃣ Update WarmupMessage
-        await tx.warmupMessage.update({
-          where: { id: message.id },
-          data: {
-            providerMessageId,
-            sentAt: new Date(),
-          },
-        });
-
-        // 2️⃣ Create SEND event
-        await tx.warmupMessageEvent.create({
-          data: {
-            tenantId,
-            warmupMessageId: message.id,
-            providerMessageId,
-            eventType: "SEND",
-            occurredAt: new Date(),
-            snsMessageId: `local-warmup-send-${message.id}-${crypto.randomUUID()}`,
-            payload: { warmup: true },
-          },
-        });
-
-        // 3️⃣ Update daily stats (single atomic upsert + increment ✅)
-        await tx.warmupDailyStat.upsert({
-          where: {
-            warmup_daily_profile_date_uq: {
-              tenantId,
-              emailIdentityId,
-              date: todayUtcDateOnly,
-            },
-          },
-          create: {
-            tenantId,
-            emailIdentityId,
-            date: todayUtcDateOnly,
-            plannedSends: 0,
-            sentCount: 1, // ✅ create with +1
-            openCount: 0,
-            replyCount: 0,
-            bounceCount: 0,
-            complaintCount: 0,
-            spamFolderCount: 0,
-          },
-          update: {
-            sentCount: { increment: 1 }, // ✅ existing +1
-          },
-        });
+      // ✅ only persist providerMessageId + sentAt
+      // (stats/events should be counted by SNS webhook)
+      await prisma.warmupMessage.update({
+        where: { id: message.id },
+        data: {
+          providerMessageId,
+          sentAt: new Date(),
+        },
       });
 
-      sentCount += 1;
+      sent += 1;
     } catch (error) {
-      console.error(
-        "warmup sender failed for warmupMessage:",
-        message.id,
-        error?.message || error
-      );
+      console.error("[warmupSender] failed", {
+        warmupMessageId: message.id,
+        providerMessageId,
+        error: error?.message || error,
+      });
 
-      // Mark failed uniquely (avoids unique constraint issues)
-      try {
-        await prisma.warmupMessage.update({
-          where: { id: message.id },
-          data: {
-            providerMessageId: `FAILED-${message.id}`,
-          },
-        });
-      } catch (e) {
-        console.error("Failed to mark warmup message as FAILED:", message.id, e?.message || e);
+      // ✅ Mark FAILED only if we never got SES MessageId
+      // If SES succeeded but DB update failed, do NOT overwrite providerMessageId.
+      if (!providerMessageId) {
+        try {
+          await prisma.warmupMessage.update({
+            where: { id: message.id },
+            data: {
+              // Better long-term: add status + lastError fields.
+              providerMessageId: `FAILED-${message.id}`,
+            },
+          });
+        } catch (e) {
+          console.error("[warmupSender] failed to mark FAILED", {
+            warmupMessageId: message.id,
+            error: e?.message || e,
+          });
+        }
       }
     }
   }
 
-  return { sent: sentCount };
+  return { sent };
 }
+
+/**
+ * SENDS ONLY WarmupMessage drafts
+//  */
 // export async function runWarmupSenderTick() {
 //   const configurationSetName = process.env.SES_WARMUP_CONFIGURATION_SET;
 //   if (!configurationSetName) {
@@ -218,7 +202,7 @@ export async function runWarmupSenderTick() {
 //   const todayUtcDateOnly = getStartOfTodayUtcDateOnly();
 //   let sentCount = 0;
 
-//   console.log("draft mssgs", draftMessages);
+//   console.log("draft mssgs", draftMessages.length);
 
 //   for (const message of draftMessages) {
 //     try {
@@ -228,10 +212,7 @@ export async function runWarmupSenderTick() {
 //         message.WarmupThread?.EmailWarmupProfile?.EmailIdentity?.id;
 
 //       if (!tenantId || !emailIdentityId) {
-//         console.warn(
-//           "Skipping warmupMessage due to missing identity",
-//           message.id
-//         );
+//         console.warn("Skipping warmupMessage due to missing identity", message.id);
 //         continue;
 //       }
 
@@ -239,10 +220,7 @@ export async function runWarmupSenderTick() {
 //       const toEmail = safeLowercaseEmail(message.to?.[0] || "");
 
 //       if (!fromEmail || !toEmail) {
-//         console.warn(
-//           "Skipping warmupMessage due to invalid emails",
-//           message.id
-//         );
+//         console.warn("Skipping warmupMessage due to invalid emails", message.id);
 //         continue;
 //       }
 
@@ -259,11 +237,13 @@ export async function runWarmupSenderTick() {
 //         configurationSetName,
 //         replyToAddresses: replyToHeader ? [String(replyToHeader)] : [],
 //         messageTags: [
-//           { Name: "tenantId", Value: tenantId },
+//           { Name: "tenantId", Value: String(tenantId) },
 //           { Name: "isWarmup", Value: "1" },
-//           { Name: "warmupMarker", Value: message.warmupMarker },
+//           { Name: "warmupMarker", Value: String(message.warmupMarker || "0") },
 //         ],
 //       });
+
+//       console.log("Send email response", sendResponse);
 
 //       const providerMessageId = sendResponse?.MessageId;
 //       if (!providerMessageId) {
@@ -293,10 +273,8 @@ export async function runWarmupSenderTick() {
 //           },
 //         });
 
-//         // 3️⃣ Update daily stats (IDENTITY-BASED ✅)
-//         // inside runWarmupSenderTick loop, before updateMany:
-
-//         await prisma.warmupDailyStat.upsert({
+//         // 3️⃣ Update daily stats (single atomic upsert + increment ✅)
+//         await tx.warmupDailyStat.upsert({
 //           where: {
 //             warmup_daily_profile_date_uq: {
 //               tenantId,
@@ -309,22 +287,17 @@ export async function runWarmupSenderTick() {
 //             emailIdentityId,
 //             date: todayUtcDateOnly,
 //             plannedSends: 0,
-//             sentCount: 0,
+//             sentCount: 1, // ✅ create with +1
 //             openCount: 0,
 //             replyCount: 0,
 //             bounceCount: 0,
 //             complaintCount: 0,
 //             spamFolderCount: 0,
 //           },
-//           update: {},
+//           update: {
+//             sentCount: { increment: 1 }, // ✅ existing +1
+//           },
 //         });
-
-//         // then do your updateMany / update:
-//         await prisma.warmupDailyStat.updateMany({
-//           where: { tenantId, emailIdentityId, date: todayUtcDateOnly },
-//           data: { sentCount: { increment: 1 } },
-//         });
-
 //       });
 
 //       sentCount += 1;
@@ -335,13 +308,17 @@ export async function runWarmupSenderTick() {
 //         error?.message || error
 //       );
 
-//       // 🔒 Mark failed uniquely (avoids UNIQUE constraint crash)
-//       await prisma.warmupMessage.update({
-//         where: { id: message.id },
-//         data: {
-//           providerMessageId: `FAILED-${message.id}`,
-//         },
-//       });
+//       // Mark failed uniquely (avoids unique constraint issues)
+//       try {
+//         await prisma.warmupMessage.update({
+//           where: { id: message.id },
+//           data: {
+//             providerMessageId: `FAILED-${message.id}`,
+//           },
+//         });
+//       } catch (e) {
+//         console.error("Failed to mark warmup message as FAILED:", message.id, e?.message || e);
+//       }
 //     }
 //   }
 
